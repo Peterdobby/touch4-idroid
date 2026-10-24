@@ -1,0 +1,816 @@
+diff --git a/SConstruct b/SConstruct
+index 749195d..6b3bf03 100644
+--- a/SConstruct
++++ b/SConstruct
+@@ -18,14 +18,14 @@ Import('*')
+ 
+ henv = Environment()
+ Export('henv')
+-henv.SConscript(['scons/Doxygen.SConscript'])
++
+ 
+ env = ARMEnvironment()
+ env.Append(CPPDEFINES=[
+ 	'OPENIBOOT_VERSION='+version,
+ 	'OPENIBOOT_VERSION_BUILD='+GetGitCommit(),
+ 	])
+-env.Append(CPPFLAGS = ['-Wall', '-Werror', '-O2', '-Ttext=0x0'])
++env.Append(CPPFLAGS = ['-Wall', '-O2', '-Ttext=0x0'])
+ Export('env')
+ 
+ def localize(env, ls):
+@@ -33,8 +33,7 @@ def localize(env, ls):
+ env.AddMethod(localize, "Localize")
+ 
+ # Documentation
+-docs = henv.Doxygen("Doxyfile")
+-Alias("docs", docs)
++
+ 
+ # Base Target Sources
+ base_src = env.Localize([
+diff --git a/arch-arm/asmhelpers.sx b/arch-arm/asmhelpers.sx
+index 1c1711d..8b6688d 100644
+--- a/arch-arm/asmhelpers.sx
++++ b/arch-arm/asmhelpers.sx
+@@ -60,6 +60,7 @@
+ 
+ .code 16
+  .thumb_func
++.type IncrementCriticalLock, %function
+ IncrementCriticalLock:
+ 	LDR	R3, =CurrentRunning
+ 	LDR	R2, [R3]
+@@ -70,6 +71,7 @@ IncrementCriticalLock:
+ 
+ 
+ .thumb_func
++.type DecrementCriticalLock, %function
+ DecrementCriticalLock:
+ 	LDR	R3, =CurrentRunning
+ 	LDR	R2, [R3]
+@@ -79,6 +81,7 @@ DecrementCriticalLock:
+ 	BX	LR
+ 
+ .thumb_func
++.type EnterCriticalSection, %function
+ EnterCriticalSection:
+ 	PUSH	{LR}
+ 
+@@ -96,6 +99,7 @@ EnterCriticalSection:
+ 	POP	{PC}
+ 
+ .thumb_func
++.type LeaveCriticalSection, %function
+ LeaveCriticalSection:
+ 	PUSH	{LR}
+ 
+@@ -116,12 +120,14 @@ LeaveCriticalSection_return:
+ 	POP	{PC}
+ 
+ .thumb_func
++.type CallArm, %function
+ CallArm:
+ 	BX	R0
+ 
+ .code 32
+ 
+ 
++.type CallThumb, %function
+ CallThumb:
+ 	BX	R0
+ 
+@@ -129,24 +135,28 @@ CallThumb:
+ @	FIQ/IRQ Control
+ @
+ 
++.type EnableCPUIRQ, %function
+ EnableCPUIRQ:
+ 	MRS	R0, CPSR
+ 	BIC	R0, R0,	#ARM11_CPSR_IRQDISABLE
+ 	MSR	CPSR_c,	R0
+ 	BX	LR
+ 
++.type EnableCPUFIQ, %function
+ EnableCPUFIQ:
+ 	MRS	R0, CPSR
+ 	BIC	R0, R0,	#ARM11_CPSR_FIQDISABLE
+ 	MSR	CPSR_c,	R0
+ 	BX	LR
+ 
++.type DisableCPUIRQ, %function
+ DisableCPUIRQ:
+ 	MRS	R0, CPSR
+ 	ORR	R0, R0,	#ARM11_CPSR_IRQDISABLE
+ 	MSR	CPSR_c,	R0
+ 	BX	LR
+ 
++.type DisableCPUFIQ, %function
+ DisableCPUFIQ:
+ 	MRS	R0, CPSR
+ 	ORR	R0, R0,	#ARM11_CPSR_FIQDISABLE
+@@ -157,38 +167,47 @@ DisableCPUFIQ:
+ @	Coprocessor manipulation
+ @
+ 
++.type ReadControlRegisterConfigData, %function
+ ReadControlRegisterConfigData:
+ 	MRC	p15, 0,	R0, c1, c0, 0
+ 	BX	LR
+ 
++.type WriteControlRegisterConfigData, %function
+ WriteControlRegisterConfigData:
+ 	MCR	p15, 0,	R0, c1, c0, 0
+ 	BX	LR
+ 
++.type ReadAuxiliaryControlRegister, %function
+ ReadAuxiliaryControlRegister:
+ 	MRC	p15, 0,	R0, c1, c0, 1
+ 	BX	LR
+ 
++.type WriteAuxiliaryControlRegister, %function
+ WriteAuxiliaryControlRegister:
+ 	MCR	p15, 0,	R0, c1, c0, 1
+ 	BX	LR
+ 
++.type WriteDomainAccessControlRegister, %function
+ WriteDomainAccessControlRegister:
+ 	MCR	p15, 0,	R0, c3, c0
+ 	BX	LR
+ 
++.type ReadDataFaultStatusRegister, %function
+ ReadDataFaultStatusRegister:
+ 	MRC	p15, 0,	R0, c5, c0, 1
+ 	BX	LR
+ 
++.type ReadFaultAddressRegister, %function
+ ReadFaultAddressRegister:
+ 	MRC	p15, 0,	R0, c6, c0, 1
+ 	BX	LR
+ 
++.type WritePeripheralPortMemoryRemapRegister, %function
+ WritePeripheralPortMemoryRemapRegister:
+ 	MCR	p15, 0,	R0, c15, c2, 4
+ 	BX	LR
+ 
++.type GiveFullAccessCP10CP11, %function
+ GiveFullAccessCP10CP11:
+ 	MRC	p15, 0,	R0, c1, c0, 2
+ 	MOV	R1, #(ARM11_AccessControl_CP10_ALL | ARM11_AccessControl_CP11_ALL)
+@@ -196,12 +215,14 @@ GiveFullAccessCP10CP11:
+ 	MCR	p15, 0,	R0, c1, c0, 2
+ 	BX	LR
+ 
++.type EnableVFP, %function
+ EnableVFP:					@ FIXME: Not working yet without VFP
+ 	FMRX	R2, FPEXC
+ 	ORR	R2, R2,	ARM11_VFP_Enable
+ 	FMXR	FPEXC, R2
+ 	BX	LR
+ 
++.type WaitForInterrupt, %function
+ WaitForInterrupt:
+ #ifdef ARM11
+ 	MOV	R0, #0
+@@ -217,14 +238,17 @@ WaitForInterrupt:
+ @	MMU management
+ @
+ 
++.type WriteTranslationTableBaseRegister0, %function
+ WriteTranslationTableBaseRegister0:
+ 	MCR	p15, 0,	R0, c2, c0
+ 	BX LR
+ 
++.type ReadTranslationTableBaseRegister0, %function
+ ReadTranslationTableBaseRegister0:
+ 	MRC	p15, 0,	R0, c2, c0
+ 	BX LR
+ 
++.type InvalidateUnifiedTLBUnlockedEntries, %function
+ InvalidateUnifiedTLBUnlockedEntries:
+ 	MOV	R0, #0
+ 	MCR	p15, 0,	R0, c8, c7
+@@ -234,11 +258,13 @@ InvalidateUnifiedTLBUnlockedEntries:
+ @	Cache management
+ @
+ 
++.type DataSynchronizationBarrier, %function
+ DataSynchronizationBarrier:
+ 	MOV	R0, #0
+ 	MCR	p15, 0,	R0, c7, c10, 4	@ Data synchronization barrier
+ 	BX	LR
+ 
++.type ClearCPUInstructionCache, %function
+ ClearCPUInstructionCache:
+ 	MOV	R0, #0
+ 	MCR	p15, 0,	R0, c7, c5
+@@ -248,18 +274,22 @@ ClearCPUInstructionCache:
+ 	NOP
+ 	BX	LR
+ 
++.type CleanDataCacheLineMVA, %function
+ CleanDataCacheLineMVA:
+ 	MCR	p15, 0,	R0, c7, c10, 1
+ 	BX	LR
+ 
++.type InvalidateDataCacheLineMVA, %function
+ InvalidateDataCacheLineMVA:
+ 	MCR	p15, 0, R0, c7, c6, 1
+ 	BX	LR
+ 
++.type CleanAndInvalidateDataCacheLineMVA, %function
+ CleanAndInvalidateDataCacheLineMVA:
+ 	MCR	p15, 0, R0, c7, c14, 1
+ 	BX	LR
+ 
++.type CleanCPUDataCache, %function
+ CleanCPUDataCache:
+ #ifdef ARM11
+ 	MOV	R0, #0
+@@ -283,6 +313,7 @@ CleanCPUDataCache_2:
+ 	MCR	p15, 0,	R0, c7, c10, 4	@ Data synchronization barrier
+ 	BX	LR
+ 
++.type InvalidateCPUDataCache, %function
+ InvalidateCPUDataCache:
+ #ifdef ARM11
+ 	MOV	R0, #0
+@@ -305,6 +336,7 @@ InvalidateCPUDataCache_2:
+ 
+ 	BX	LR
+ 
++.type CleanAndInvalidateCPUDataCache, %function
+ CleanAndInvalidateCPUDataCache:
+ #ifdef ARM11
+ 	MOV	R0, #0
+@@ -329,6 +361,7 @@ CleanAndInvalidateCPUDataCache_2:
+ 	MCR	p15, 0,	R0, c7, c10, 4	@ Data synchronization barrier
+ 	BX	LR
+ 
++.type ClearCPUCaches, %function
+ ClearCPUCaches:
+ 	STMFD	SP!, {LR}
+ 	BL	CleanCPUDataCache
+@@ -339,15 +372,18 @@ ClearCPUCaches:
+ // These two are used by the 3GS,
+ // clearly for demonic purposes. -- Ricky26
+ .global GetC9C012
++.type GetC9C012, %function
+ GetC9C012:
+ 	MRC p15, 1, R0, c9, c0, 2
+ 	BX LR
+ 
+ .global SetC9C012
++.type SetC9C012, %function
+ SetC9C012:
+ 	MCR p15, 1, R0, c9, c0, 2
+ 	BX LR
+ 
++.type Reboot, %function
+ Reboot:
+ #if defined(CONFIG_S5L8900) || defined(CONFIG_S5L8720)
+ 	LDR	R0, =WDT_CTRL
+@@ -392,6 +428,7 @@ Reboot:
+ @ Tasks
+ @
+ 
++.type SwapTask, %function
+ SwapTask:
+ 	@ Store current stuff
+ 	LDR R1, =CurrentRunning
+@@ -428,6 +465,7 @@ SwapTask:
+ 
+ .global task_run
+ 
++.type StartTask, %function
+ StartTask:
+ 	@ R4 = Task PTR
+ 	@ R5 = Argument
+@@ -442,11 +480,13 @@ StartTask:
+ 
+ 	B Reboot
+ 
++.type EndlessLoop, %function
+ EndlessLoop:
+ 	B	EndlessLoop
+ 
+ .data
+ 
++.type CurrentRunning, %function
+ CurrentRunning:
+ 	.word	0x0
+ 
+diff --git a/menu/menu.c b/menu/menu.c
+index d6cbe3f..79317d8 100644
+--- a/menu/menu.c
++++ b/menu/menu.c
+@@ -41,6 +41,29 @@
+ #include "scripting.h"
+ #include "nvram.h"
+ #include "tasks.h"
++#ifdef T4_MENU_01
++#include "t4_diag.h"
++#include "commands.h"
++static unsigned t4_entry_count(void)
++{
++	unsigned count = 1; /* Console is the renderer's root sentinel. */
++	BootEntry *entry = setup_root()->list_ptr.next;
++	for(; entry != setup_root(); entry = entry->list_ptr.next) count++;
++	return count;
++}
++static void t4_menu_status(void)
++{
++	bufferPrintf("[T4] boot entries = %d (including Console); selected=%s; UI ONLY\n",
++		t4_entry_count(), setup_current() == setup_root() ? "Console" : setup_current()->title);
++}
++static error_t cmd_t4_menu_status(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	t4_menu_status();
++	return SUCCESS;
++}
++COMMAND("t4_menu_status", "Show RAM-only menu selection.", cmd_t4_menu_status);
++#endif
+ 
+ int globalFtlHasBeenRestored; /**< int global variable to tell wether a ftl_restore has been done. */
+ 
+@@ -54,6 +77,9 @@ static TaskDescriptor menu_task; /**< TaskDescriptor Menu task */
+  */
+ void menu_draw()
+ {
++#ifdef T4_MENU_01
++	t4_mark("menu display begin: menu_draw", 0);
++#endif
+ 	framebuffer_clear();
+ 
+ 	int y = 0;
+@@ -81,6 +107,10 @@ void menu_draw()
+ 	framebuffer_setloc(0, 47);
+ 	framebuffer_setcolors(COLOR_WHITE, COLOR_BLACK);
+ 	framebuffer_print_force(OPENIBOOT_VERSION_STR);
++#ifdef T4_MENU_01
++	t4_mark("menu display returned: menu_draw", 0);
++	t4_menu_status();
++#endif
+ }
+ 
+ /**
+@@ -92,6 +122,36 @@ void menu_draw()
+  */
+ static void menu_run(uint32_t _V)
+ {
++#ifdef T4_MENU_01
++	/* Keep upstream GPIO/button initialization. Poll pressed state on edges;
++	 * the upstream !buttons_is_pushed(volume) repeats while NOT pressed. */
++	int prev_down = buttons_is_pushed(BUTTONS_VOLDOWN);
++	int prev_up = buttons_is_pushed(BUTTONS_VOLUP);
++	int prev_hold = buttons_is_pushed(BUTTONS_HOLD);
++	int prev_home = buttons_is_pushed(BUTTONS_HOME);
++	(void)_V;
++	t4_mark("menu button task running", 0);
++	while(TRUE) {
++		int down = buttons_is_pushed(BUTTONS_VOLDOWN);
++		int up = buttons_is_pushed(BUTTONS_VOLUP);
++		int hold = buttons_is_pushed(BUTTONS_HOLD);
++		int home = buttons_is_pushed(BUTTONS_HOME);
++		if((down && !prev_down) || (hold && !prev_hold)) {
++			setup_entry(setup_current()->list_ptr.next);
++			menu_draw();
++		} else if(up && !prev_up) {
++			setup_entry(setup_current()->list_ptr.prev);
++			menu_draw();
++		}
++		if(home && !prev_home) {
++			bufferPrintf("[T4] Home: UI ONLY, activation disabled\n");
++			t4_menu_status();
++		}
++		prev_down=down; prev_up=up; prev_hold=hold; prev_home=home;
++		udelay(20000);
++		task_yield();
++	}
++#else
+ 	while(TRUE)
+ 	{
+ #ifdef BUTTONS_VOLDOWN
+@@ -136,6 +196,7 @@ static void menu_run(uint32_t _V)
+ 
+ 		task_yield();
+ 	}
++#endif
+ }
+ 
+ /**
+@@ -146,6 +207,26 @@ static void menu_run(uint32_t _V)
+  */
+ void menu_main()
+ {
++#ifdef T4_MENU_01
++	t4_mark("menu init begin: menu_main", 0);
++	task_init(&menu_task, "menu", TASK_DEFAULT_STACK_SIZE);
++	init_modules();
++	t4_trace_dump();
++	t4_mark("menu.lst load bypassed: built-in RAM entries, no filesystem access", 0);
++	setup_title("iOS");
++	setup_title("Test Entry");
++	setup_entry(setup_default());
++	t4_menu_status();
++	if(!FramebufferHasInit) {
++		t4_mark("menu renderer NOT CALLED: framebuffer_setup not completed", -1);
++		OpenIBootConsole();
++		return;
++	}
++	framebuffer_setdisplaytext(FALSE);
++	menu_draw();
++	task_start(&menu_task, &menu_run, NULL);
++	bufferPrintf("[T4] T4_MENU_01 ready: 3 UI-only rows; ACM remains active\n");
++#else
+ 	task_init(&menu_task, "menu", TASK_DEFAULT_STACK_SIZE);
+ 
+ 	init_modules();
+@@ -177,6 +258,7 @@ void menu_main()
+ 	menu_draw();
+ 
+ 	task_start(&menu_task, &menu_run, NULL);
++#endif
+ }
+ 
+ /**
+@@ -187,7 +269,13 @@ void menu_main()
+  */
+ static void menu_init_boot()
+ {
++#ifdef T4_MENU_01
++	t4_mark("menu boot hook: menu_init_boot", 0);
++	/* Do not dereference an absent framebuffer after a logged display error. */
++	if(FramebufferHasInit) framebuffer_clear();
++#else
+ 	framebuffer_clear();
++#endif
+ 	bufferPrintf("Loading openiBoot...\n");
+ 
+ 	OpenIBootMain = &menu_main;
+diff --git a/mk8900image/SConscript b/mk8900image/SConscript
+index 0db5375..9bde21e 100644
+--- a/mk8900image/SConscript
++++ b/mk8900image/SConscript
+@@ -1,28 +1,23 @@
+-Import("*")
+-
+-import platform
+-
+-libs = []
+-if platform.system() == 'Linux':
+-	if platform.machine() == 'x86_64':
+-		libs += ["x86_64/libxpwn.a", "x86_64/libcommon.a"]
+-	else:
+-		libs += ["x86/libxpwn.a", "x86/libcommon.a"]
+-
+-if platform.system() == 'Darwin':
+-	libs += ["mac-x86/libxpwn.a", "mac-x86/libcommon.a"]
+-
+-mk8900image = henv.Program('mk8900image', ['mk8900image.c'] + libs, LIBPATH='/usr/X11/lib', LIBS=['m', 'dl', 'png', 'crypto', 'z'])
+-
+-def generate_actions(source, target, env, for_sig=False, **kw):
+-	Depends(target, mk8900image)
+-
+-	if len(source) > 2:
+-		return "%s %s %s %s %s" % (str(mk8900image[0]), source[0], target[0], source[1], source[2])
+-
+-	if len(source) > 1:
+-		return "%s %s %s %s" % (str(mk8900image[0]), source[0], target[0], source[1])
+-	
+-	return "%s %s %s" % (str(mk8900image[0]), source[0], target[0])
+-
+-env.Append(BUILDERS = {'Make8900Image': Builder(generator=generate_actions)})
++Import('*')
++import struct
++def flatten(target, source, env):
++    data = open(str(source[0]), 'rb').read()
++    if data[:6] != b'\x7fELF\x01\x01':
++        raise ValueError('Expected ELF32 little endian')
++    entry, phoff = struct.unpack_from('<II', data, 24)
++    size, count = struct.unpack_from('<HH', data, 42)
++    headers = [struct.unpack_from('<8I', data, phoff+i*size) for i in range(count)]
++    extent = max(p[2]+p[5]-entry for p in headers)
++    if entry != 0 or not 0 < extent < 0x1000000:
++        raise ValueError('Unexpected N81AP layout')
++    image = bytearray(extent)
++    for p in headers:
++        if not p[4]:
++            continue
++        offset = p[2]-entry
++        if offset < 0 or offset+p[4] > extent or p[1]+p[4] > len(data):
++            raise ValueError('Invalid segment')
++        image[offset:offset+p[4]] = data[p[1]:p[1]+p[4]]
++    open(str(target[0]), 'wb').write(image)
++    return 0
++env.Append(BUILDERS={'Make8900Image': Builder(action=flatten)})
+diff --git a/openiboot.c b/openiboot.c
+index 8536b33..078d5fb 100644
+--- a/openiboot.c
++++ b/openiboot.c
+@@ -25,12 +25,15 @@
+ #include "platform.h"
+ #include "tasks.h"
+ #include "util.h"
++#include "t4_diag.h"
+ 
+ mainfn_t OpenIBootMain = NULL;
+ 
+ void OpenIBootConsole()
+ {
+ 	init_modules();
++	t4_mark("USB ACM modules initialized; console entered", 0);
++	t4_trace_dump();
+ 	bufferPrintf(	"  ___                   _ ____              _   \r\n"
+ 					" / _ \\ _ __   ___ _ __ (_) __ )  ___   ___ | |_ \r\n"
+ 					"| | | | '_ \\ / _ \\ '_ \\| |  _ \\ / _ \\ / _ \\| __|\r\n"
+@@ -49,6 +52,11 @@ void OpenIBootStart()
+ 
+ 	OpenIBootMain = &OpenIBootConsole;
+ 	init_boot_modules();
++#ifdef T4_DIAG_01
++	t4_mark("menu module NOT LINKED in upstream iPodTouch4G target", 0);
++	t4_mark("menu.lst load NOT ATTEMPTED; no menu_main call", 0);
++	t4_mark("boot entries = 0 (root sentinel only)", 0);
++#endif
+ 
+ 	OpenIBootMain();
+ 
+diff --git a/plat-a4/SConscript b/plat-a4/SConscript
+index 935691f..d55452c 100644
+--- a/plat-a4/SConscript
++++ b/plat-a4/SConscript
+@@ -1,6 +1,16 @@
+ Import("*")
+ 
+ env = env.Clone()
++import os
++t4_variant = os.environ.get('T4_BUILD', 'T4_DIAG_01')
++if t4_variant not in ('T4_DIAG_01', 'T4_MENU_01'):
++    raise ValueError('Invalid T4_BUILD')
++env.Append(CCFLAGS=['-mcpu=cortex-a8'])
++env.Append(ASPPFLAGS=['-mcpu=cortex-a8'])
++env.Append(LINKFLAGS=['-mcpu=cortex-a8'])
++env.Append(CPPDEFINES=[t4_variant])
++env['T4_BUILD'] = t4_variant
++
+ env.Append(CPPPATH = [Dir('includes')])
+ env.Append(CPPDEFINES = ['ARM_A8', 'CONFIG_A4', 'MALLOC_NO_WDT', 'BIG_FONT'])
+ 
+@@ -33,7 +43,8 @@ plat_a4_src = arch_arm_src + base_src + env.Localize([
+ 	'uart.c',
+ 	'cdma.c',
+ 	'usbphy.c',
+-	'h2fmi.c',
++	'h2fmi-ramonly.c',
++	't4_diag.c',
+ 	'sdio.c',
+ 	]) + hfs_src
+ Export('plat_a4_src')
+diff --git a/plat-a4/a4.c b/plat-a4/a4.c
+index 958c44f..1f03a57 100644
+--- a/plat-a4/a4.c
++++ b/plat-a4/a4.c
+@@ -19,12 +19,19 @@
+ #include "uart.h"
+ #include "wdt.h"
+ #include "audiocodec.h"
++#include "t4_diag.h"
+ 
+ void platform_init()
+ {
++	t4_mark("arm_setup begin", 0);
+ 	arm_setup();
++	t4_mark("arm_setup OK", 0);
++	t4_mark("mmu_setup begin", 0);
+ 	mmu_setup();
++	t4_mark("mmu_setup OK", 0);
+ 	tasks_setup();
++	t4_trace_ready();
++	t4_mark("tasks_setup OK", 0);
+ 
+ 	// Basic prerequisites for everything else
+ 	miu_setup();
+@@ -53,10 +60,18 @@ void platform_init()
+ 
+ 	aes_setup();
+ 
+-	if(!displaypipe_init()) {
+-		framebuffer_setup();
++	t4_mark("display init begin: displaypipe_init", 0);
++	t4_display_result = displaypipe_init();
++	t4_mark(t4_display_result ? "display init FAIL: displaypipe_init" : "display init OK: displaypipe_init", t4_display_result);
++	if(!t4_display_result) {
++		t4_mark("framebuffer init begin: framebuffer_setup", 0);
++		t4_framebuffer_result = framebuffer_setup();
++		t4_mark(t4_framebuffer_result ? "framebuffer init FAIL" : "framebuffer init OK", t4_framebuffer_result);
+ 		framebuffer_setdisplaytext(TRUE);
+ 		lcd_set_backlight_level(1500);
++		t4_mark("backlight call returned", 0);
++	} else {
++		t4_mark("framebuffer skipped: displaypipe_init failed", t4_display_result);
+ 	}
+ 
+ 	pmu_setup_gpio(0, 1, 1);
+diff --git a/plat-a4/cdma.c b/plat-a4/cdma.c
+index 146ee77..71f8039 100644
+--- a/plat-a4/cdma.c
++++ b/plat-a4/cdma.c
+@@ -1,7 +1,7 @@
+ #include "openiboot.h"
+ #include "arm/arm.h"
+ #include "util.h"
+-#include "malloc.h"
++
+ #include "hardware/dma.h"
+ #include "cdma.h"
+ #include "clock.h"
+diff --git a/plat-a4/clcd.c b/plat-a4/clcd.c
+index a1d7325..1515957 100644
+--- a/plat-a4/clcd.c
++++ b/plat-a4/clcd.c
+@@ -235,6 +235,7 @@ void configureLCDClock(uint32_t type, int zero0, int zero1, int zero2, int zero3
+ 	}
+ }
+ 
++#include "t4_diag.h"
+ int displaypipe_init() {
+ 	int result = 0;
+ 	uint32_t clcd_reg;
+@@ -336,7 +337,9 @@ int displaypipe_init() {
+ //	nvram_setvar("framebuffer", currentWindow->framebuffer.buffer, 0);
+ 	configureLCDClock(LCDTable->unkn1, 0, 0, 0, 0, LCDTable->DrivingClockFrequency);
+ 	if (LCDTable->unkn17 == 3) {
++		t4_mark("pinot_init begin", 0);
+ 		result = pinot_init(LCDTable, colorSpace, &panelID, currentWindow);
++		t4_mark("pinot_init return", result);
+ 		if (result) {
+ 			lcd_fill_switch(OFF, 0);
+ 			LCDTable = NULL;
+@@ -397,7 +400,9 @@ int pinot_init(LCDInfo* LCDTable, ColorSpace colorspace, uint32_t* panelID, Wind
+ 	gpio_pin_output(0x206, 0);
+ #endif
+ 	task_sleep(10);
+-	mipi_dsim_init(LCDTable);
++	t4_mark("mipi_dsim_init begin", 0);
++	int t4_mipi_result = mipi_dsim_init(LCDTable);
++	t4_mark("mipi_dsim_init return (upstream ignores result)", t4_mipi_result);
+ #if defined(CONFIG_IPAD_1G)
+ 	gpio_pin_output(0x1404, 1);
+ #else
+diff --git a/plat-a4/h2fmi-ramonly.c b/plat-a4/h2fmi-ramonly.c
+new file mode 100644
+index 0000000..252aa69
+--- /dev/null
++++ b/plat-a4/h2fmi-ramonly.c
+@@ -0,0 +1,5 @@
++/* No NAND hardware driver or module registration in either UI test. */
++#include "openiboot.h"
++void h2fmi_set_emf(uint32_t e, uint32_t i) { }
++uint32_t h2fmi_get_emf(void) { return 0; }
++void h2fmi_set_key(uint32_t e, void *k, uint32_t l, uint32_t s, uint32_t o) { }
+diff --git a/plat-a4/iPodTouch4G.SConscript b/plat-a4/iPodTouch4G.SConscript
+index bd493a1..8bcb564 100644
+--- a/plat-a4/iPodTouch4G.SConscript
++++ b/plat-a4/iPodTouch4G.SConscript
+@@ -12,6 +12,9 @@ ipt_4g_src = [plat_a4_src,
+ Export('ipt_4g_src')
+ 
+ env = env.Clone()
++if env['T4_BUILD'] == 'T4_MENU_01':
++    env.AddModules(['menu'])
++
+ env.Append(CPPDEFINES=['OPENIBOOT_VERSION_CONFIG=\\" for iPod Touch 4G\\"', 'MACH_ID=3564'])
+ 
+ env.OpenIBootTarget('iPodTouch4G', 'ipt_4g_openiboot', 'CONFIG_IPOD_TOUCH_4G', ipt_4g_src, None)
+diff --git a/plat-a4/includes/t4_diag.h b/plat-a4/includes/t4_diag.h
+new file mode 100644
+index 0000000..3a78e95
+--- /dev/null
++++ b/plat-a4/includes/t4_diag.h
+@@ -0,0 +1,8 @@
++#ifndef T4_DIAG_H
++#define T4_DIAG_H
++void t4_mark(const char *name, int result);
++void t4_trace_ready(void);
++void t4_trace_dump(void);
++extern int t4_display_result;
++extern int t4_framebuffer_result;
++#endif
+diff --git a/plat-a4/t4_diag.c b/plat-a4/t4_diag.c
+new file mode 100644
+index 0000000..3242de9
+--- /dev/null
++++ b/plat-a4/t4_diag.c
+@@ -0,0 +1,54 @@
++#include "openiboot.h"
++#include "commands.h"
++#include "framebuffer.h"
++#include "lcd.h"
++#include "util.h"
++#include "t4_diag.h"
++
++/* No heap, printf or scheduler access before tasks_setup. These records are
++ * ordinary RAM and are printed when the existing console becomes available. */
++static struct { const char *name; int result; } trace[48];
++static unsigned trace_count;
++static int ready;
++int t4_display_result = -999;
++int t4_framebuffer_result = -999;
++
++void t4_mark(const char *name, int result)
++{
++    if(trace_count < 48) {
++        trace[trace_count].name = name;
++        trace[trace_count++].result = result;
++    }
++    if(ready) bufferPrintf("[T4] %s ret=%d\n", name, result);
++}
++
++void t4_trace_ready(void) { ready = 1; }
++
++void t4_trace_dump(void)
++{
++    unsigned i;
++#ifdef T4_MENU_01
++    bufferPrintf("[T4] build=T4_MENU_01\n");
++#else
++    bufferPrintf("[T4] build=T4_DIAG_01\n");
++#endif
++    bufferPrintf("[T4] trace begin: %s\n", OPENIBOOT_VERSION_STR);
++    for(i = 0; i < trace_count; i++)
++        bufferPrintf("[T4] %s ret=%d\n",trace[i].name,trace[i].result);
++    bufferPrintf("[T4] display_result=%d framebuffer_result=%d FramebufferHasInit=%d\n",
++                 t4_display_result,t4_framebuffer_result,FramebufferHasInit);
++    if(FramebufferHasInit && currentWindow)
++        bufferPrintf("[T4] framebuffer=%p width=%d height=%d stride=%d colorspace=%d\n",
++                     currentWindow->framebuffer.buffer,currentWindow->framebuffer.width,
++                     currentWindow->framebuffer.height,currentWindow->framebuffer.lineWidth,
++                     currentWindow->framebuffer.colorSpace);
++    bufferPrintf("[T4] trace end\n");
++}
++
++static error_t cmd_t4_diag(int argc, char **argv)
++{
++    (void)argc; (void)argv;
++    t4_trace_dump();
++    return SUCCESS;
++}
++COMMAND("t4_diag", "Print RAM-only T4 initialization trace.", cmd_t4_diag);
+diff --git a/scons/ARMEnvironment.SConscript b/scons/ARMEnvironment.SConscript
+index 904b65b..04ba310 100644
+--- a/scons/ARMEnvironment.SConscript
++++ b/scons/ARMEnvironment.SConscript
+@@ -10,13 +10,13 @@ def ARMEnvironment(*a, **kw):
+ 	env.Append(CPPPATH = ['#includes'])
+ 	env.Append(CPPFLAGS = plat_flags+['-nostdlib'])
+ 	env.Append(ASPPFLAGS = ['-xassembler-with-cpp'])
+-	env.Append(LINKFLAGS = plat_flags+['-nostdlib', '--nostdlib', '-Ttext=0x0'])
++	env.Append(LINKFLAGS = plat_flags+['-nostdlib', '-fno-use-linker-plugin', '-Ttext=0x0'])
+ 	env.Append(LIBS = ['gcc'])
+ 
+ 	env['PROGSUFFIX'] = ''
+ 
+-	if not env.has_key("CROSS"):
+-		if env['ENV'].has_key("CROSS"):
++	if "CROSS" not in env:
++		if "CROSS" in env["ENV"]:
+ 			env['CROSS'] = env['ENV']['CROSS']
+ 		else:
+ 			env["CROSS"] = 'arm-elf-'
+diff --git a/scons/Git.SConscript b/scons/Git.SConscript
+index bc493ed..b9812d1 100644
+--- a/scons/Git.SConscript
++++ b/scons/Git.SConscript
+@@ -1,7 +1,5 @@
+ import subprocess
+ 
+ def GetGitCommit():
+-	p = subprocess.Popen('git log | head -n1 | cut -b8-14', shell=True, stdout=subprocess.PIPE)
+-	ret,smth = p.communicate()
+-	return ret[:-1]
++    return subprocess.check_output(['git', 'rev-parse', '--short=7', 'HEAD']).decode().strip()
+ Export('GetGitCommit')
+diff --git a/scons/Module.SConscript b/scons/Module.SConscript
+index 5e07194..14125dc 100644
+--- a/scons/Module.SConscript
++++ b/scons/Module.SConscript
+@@ -35,7 +35,7 @@ class Module:
+ 			env.Append(**a)
+ 
+ def FindModule(env, name):
+-	if env['MODULES'] != None and env['MODULES'].has_key(name):
++	if env['MODULES'] != None and name in env['MODULES']:
+ 		return env['MODULES'][name]
+ 
+ 	return None
+@@ -58,7 +58,7 @@ env.AddMethod(CreateModule, "CreateModule")
+ def AddModule(env, name):
+ 	mod = env.FindModule(name)
+ 	if mod is None:
+-		print "No such module %s." % name
++		print("No such module %s." % name)
+ 		return None
+ 
+ 	mod.Add(env)

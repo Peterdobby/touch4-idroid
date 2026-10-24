@@ -1,0 +1,171 @@
+--- a/SConstruct
++++ b/SConstruct
+@@ -18,14 +18,13 @@
+ 
+ henv = Environment()
+ Export('henv')
+-henv.SConscript(['scons/Doxygen.SConscript'])
+ 
+ env = ARMEnvironment()
+ env.Append(CPPDEFINES=[
+ 	'OPENIBOOT_VERSION='+version,
+ 	'OPENIBOOT_VERSION_BUILD='+GetGitCommit(),
+ 	])
+-env.Append(CPPFLAGS = ['-Wall', '-Werror', '-O2', '-Ttext=0x0'])
++env.Append(CPPFLAGS = ['-Wall', '-O2', '-Ttext=0x0'])
+ Export('env')
+ 
+ def localize(env, ls):
+@@ -33,8 +32,6 @@
+ env.AddMethod(localize, "Localize")
+ 
+ # Documentation
+-docs = henv.Doxygen("Doxyfile")
+-Alias("docs", docs)
+ 
+ # Base Target Sources
+ base_src = env.Localize([
+--- a/scons/ARMEnvironment.SConscript
++++ b/scons/ARMEnvironment.SConscript
+@@ -10,13 +10,13 @@
+ 	env.Append(CPPPATH = ['#includes'])
+ 	env.Append(CPPFLAGS = plat_flags+['-nostdlib'])
+ 	env.Append(ASPPFLAGS = ['-xassembler-with-cpp'])
+-	env.Append(LINKFLAGS = plat_flags+['-nostdlib', '--nostdlib', '-Ttext=0x0'])
++	env.Append(LINKFLAGS = plat_flags+['-nostdlib', '-fno-use-linker-plugin', '-Ttext=0x0'])
+ 	env.Append(LIBS = ['gcc'])
+ 
+ 	env['PROGSUFFIX'] = ''
+ 
+-	if not env.has_key("CROSS"):
+-		if env['ENV'].has_key("CROSS"):
++	if "CROSS" not in env:
++		if "CROSS" in env['ENV']:
+ 			env['CROSS'] = env['ENV']['CROSS']
+ 		else:
+ 			env["CROSS"] = 'arm-elf-'
+--- a/scons/Git.SConscript
++++ b/scons/Git.SConscript
+@@ -1,7 +1,5 @@
+ import subprocess
+ 
+ def GetGitCommit():
+-	p = subprocess.Popen('git log | head -n1 | cut -b8-14', shell=True, stdout=subprocess.PIPE)
+-	ret,smth = p.communicate()
+-	return ret[:-1]
++	return 'ramtest'
+ Export('GetGitCommit')
+--- a/scons/Module.SConscript
++++ b/scons/Module.SConscript
+@@ -35,7 +35,7 @@
+ 			env.Append(**a)
+ 
+ def FindModule(env, name):
+-	if env['MODULES'] != None and env['MODULES'].has_key(name):
++	if env['MODULES'] != None and name in env['MODULES']:
+ 		return env['MODULES'][name]
+ 
+ 	return None
+@@ -58,7 +58,7 @@
+ def AddModule(env, name):
+ 	mod = env.FindModule(name)
+ 	if mod is None:
+-		print "No such module %s." % name
++		print("No such module %s." % name)
+ 		return None
+ 
+ 	mod.Add(env)
+--- a/plat-a4/SConscript
++++ b/plat-a4/SConscript
+@@ -1,6 +1,12 @@
+ Import("*")
++import os
+ 
+ env = env.Clone()
++if os.environ.get('RAMTEST_AUTOSTART') == '1':
++	env.Append(CPPDEFINES = ['RAMTEST_AUTOSTART'])
++env.Append(CCFLAGS = ['-mcpu=cortex-a8'])
++env.Append(ASPPFLAGS = ['-mcpu=cortex-a8'])
++env.Append(LINKFLAGS = ['-mcpu=cortex-a8'])
+ env.Append(CPPPATH = [Dir('includes')])
+ env.Append(CPPDEFINES = ['ARM_A8', 'CONFIG_A4', 'MALLOC_NO_WDT', 'BIG_FONT'])
+ 
+@@ -33,7 +39,8 @@
+ 	'uart.c',
+ 	'cdma.c',
+ 	'usbphy.c',
+-	'h2fmi.c',
++	'h2fmi-ramtest.c',
++	'ramtest-assets.S',
+ 	'sdio.c',
+ 	]) + hfs_src
+ Export('plat_a4_src')
+--- a/plat-a4/cdma.c
++++ b/plat-a4/cdma.c
+@@ -1,7 +1,6 @@
+ #include "openiboot.h"
+ #include "arm/arm.h"
+ #include "util.h"
+-#include "malloc.h"
+ #include "hardware/dma.h"
+ #include "cdma.h"
+ #include "clock.h"
+--- /dev/null
++++ b/plat-a4/h2fmi-ramtest.c
+@@ -0,0 +1,7 @@
++/* RAM-only test build: no NAND hardware driver or registration. */
++#include "openiboot.h"
++
++void h2fmi_set_emf(uint32_t enable, uint32_t iv_input) { }
++uint32_t h2fmi_get_emf(void) { return 0; }
++void h2fmi_set_key(uint32_t enable, void *key, uint32_t length,
++                  uint32_t sha, uint32_t offset) { }
+--- /dev/null
++++ b/plat-a4/ramtest-assets.S
+@@ -0,0 +1,16 @@
++#ifdef RAMTEST_AUTOSTART
++.section .rodata
++.balign 4
++.global ramtest_kernel
++.global ramtest_kernel_end
++ramtest_kernel:
++.incbin "../../build/zImage"
++ramtest_kernel_end:
++.balign 4
++.global ramtest_initramfs
++.global ramtest_initramfs_end
++ramtest_initramfs:
++.incbin "../../build/initramfs.cpio.gz"
++ramtest_initramfs_end:
++.balign 4
++#endif
+--- a/openiboot.c
++++ b/openiboot.c
+@@ -25,6 +25,12 @@
+ #include "platform.h"
+ #include "tasks.h"
+ #include "util.h"
++#ifdef RAMTEST_AUTOSTART
++#include "actions.h"
++#include "timer.h"
++extern const unsigned char ramtest_kernel[], ramtest_kernel_end[];
++extern const unsigned char ramtest_initramfs[], ramtest_initramfs_end[];
++#endif
+ 
+ mainfn_t OpenIBootMain = NULL;
+ 
+@@ -52,6 +58,14 @@
+ 
+ 	OpenIBootMain();
+ 
++#ifdef RAMTEST_AUTOSTART
++	bufferPrintf("\nTOUCH4 RAM TEST: starting Linux in 5 seconds.\n");
++	udelay(5000000);
++	set_kernel((void*)ramtest_kernel, ramtest_kernel_end - ramtest_kernel);
++	set_ramdisk((void*)ramtest_initramfs, ramtest_initramfs_end - ramtest_initramfs);
++	boot_linux("console=ttySAC0,115200 console=tty0 loglevel=8 rdinit=/init ro panic=0", MACH_ID);
++#endif
++
+ 	tasks_run(); // Runs forever.
+ }
+ 

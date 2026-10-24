@@ -1,0 +1,20 @@
+name: Source checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Installer state tests
+        run: python3 installer/t4-android02/tests.py
+      - name: Component and complete image-group tests
+        run: python3 installer/t4-android02/test_profiles.py
+      - name: Native wrapper checks
+        run: python3 tools/test_native_image.py
+      - name: Bash syntax
+        run: bash -n start.sh installer/t4-android02/start.sh

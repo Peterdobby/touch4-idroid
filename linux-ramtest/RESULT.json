@@ -1,0 +1,48 @@
+{
+  "variant": "T4_LINUX_RAM_02",
+  "fix": "construct command line field by field instead of substring search; host verifies returned cmdline before Linux handoff",
+  "previous_hardware_result": "blue screen; no confirmed Linux log",
+  "previous_log": "logs/linux-ram-20261018-173640.log",
+  "previous_last_device_message": "init: Shutting down modules.",
+  "tests": [
+    {
+      "scenario": "ok",
+      "mode": "--stage",
+      "passed": true,
+      "log": "build/T4_LINUX_RAM_02/offline-stage-ok.log",
+      "type": "offline mocked USB; not hardware"
+    },
+    {
+      "scenario": "ok",
+      "mode": "--boot",
+      "passed": true,
+      "log": "build/T4_LINUX_RAM_02/offline-boot-ok.log",
+      "type": "offline mocked USB; not hardware"
+    },
+    {
+      "scenario": "bad-version",
+      "mode": "--boot",
+      "passed": true,
+      "log": "build/T4_LINUX_RAM_02/offline-boot-bad-version.log",
+      "type": "offline mocked USB; not hardware"
+    },
+    {
+      "scenario": "bad-stage",
+      "mode": "--boot",
+      "passed": true,
+      "log": "build/T4_LINUX_RAM_02/offline-boot-bad-stage.log",
+      "type": "offline mocked USB; not hardware"
+    },
+    {
+      "scenario": "bad-cmdline",
+      "mode": "--boot",
+      "passed": true,
+      "log": "build/T4_LINUX_RAM_02/offline-boot-bad-cmdline.log",
+      "type": "offline mocked USB; not hardware"
+    }
+  ],
+  "cmdline_test": "build/T4_LINUX_RAM_02/cmdline-test.log",
+  "kernel_and_initramfs": "byte-identical to 01; only RAM adapter/host guards changed",
+  "old_build_01_unchanged": true,
+  "hardware_result": "not retested; user runs supplied commands"
+}

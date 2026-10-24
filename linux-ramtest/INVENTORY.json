@@ -1,0 +1,136 @@
+{
+  "project": ".",
+  "archive": {
+    "path": "<HOME>/Downloads/androidi4.zip",
+    "bytes": 80036044,
+    "sha256": "ec675ca867c340d943eac9cd0676fa8ca71427432d93d5961379c851eda88d9d",
+    "zip_crc_ok": true,
+    "has_kernel": false,
+    "members": [
+      {
+        "path": "<HOME>/Downloads/androidi4.zip!/androidi4/ramdisk.img",
+        "bytes": 1039024,
+        "sha256": "a5ef36d2feb9cb7fd515bd556037712f2b30a61f68dc94baea78663bdd6fd0c9",
+        "format": "gzip compressed data, from Unix"
+      },
+      {
+        "path": "<HOME>/Downloads/androidi4.zip!/androidi4/userdata.img",
+        "bytes": 104857600,
+        "sha256": "4b7b5250ecbaa05bd5506f1e8bf7f3da09fb268edb1d7c8fb127caa1e819236c",
+        "format": "Linux rev 1.0 ext4 filesystem data, UUID=57f8f4bc-abf4-0000-675f-946fc0f9f25b (extents) (large files)"
+      },
+      {
+        "path": "<HOME>/Downloads/androidi4.zip!/androidi4/system.img",
+        "bytes": 88695552,
+        "sha256": "c4f531292417f23ab1016fe6411e2e25882ed1ad9d67f8406e728dcca5ff3318",
+        "format": "data"
+      },
+      {
+        "path": "<HOME>/Downloads/androidi4.zip!/androidi4/system_unpacked.zip",
+        "bytes": 31743675,
+        "sha256": "0da9d607db6dec7c77b61093d7b3f6fb3f2dbd0f34e87ff968ac0825b58775bc",
+        "format": "Zip archive data, at least v2.0 to extract, compression method=deflate"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "./build/zImage",
+      "bytes": 850816,
+      "sha256": "86804270afa5d1f6e0b2d33f41dc55ae41d56b7d92091bfe6391f97dd61aa978",
+      "format": "Linux kernel ARM boot executable zImage (little-endian)"
+    },
+    {
+      "path": "./build/initramfs.cpio.gz",
+      "bytes": 812,
+      "sha256": "514734c2384e5ab1f7e2e0939b75381f30dcb1d811bf7e2ff8909a76bad24bd1",
+      "format": "gzip compressed data, max compression, original size modulo 2^32 34816"
+    },
+    {
+      "path": "./build/init",
+      "bytes": 33875,
+      "sha256": "39d2077260ca87327a66cb3123172c37cd2c2900297ffa12a181eeefea7b3557",
+      "format": "ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV), statically linked, not stripped"
+    },
+    {
+      "path": "./build/openiboot-linux-test.bin",
+      "bytes": 1115632,
+      "sha256": "2bfac10d31420902433cb67ed8743d8176b8a08514d7bac8d71bd6df515c4673",
+      "format": "data"
+    },
+    {
+      "path": "./build/android-prepared/system.ext2.img",
+      "bytes": 134217728,
+      "sha256": "0959022df8c95c999d5310c62dfa334793e4d8d59759e108c26c6b711743e22f",
+      "format": "Linux rev 1.0 ext2 filesystem data, UUID=1f4882be-9227-49a9-9cb0-539157f522ba, volume name \"ANDROID_SYSTEM\" (large files)"
+    },
+    {
+      "path": "./sources/iDroid-kernel-idroid-3.0.0/vmlinux",
+      "bytes": 2240388,
+      "sha256": "6034b609c857652c2bd1e0a1b948651aafff955f48cc299656278fc5b55e0bf8",
+      "format": "ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV), statically linked, not stripped"
+    },
+    {
+      "path": "./sources/iDroid-kernel-idroid-3.0.0/arch/arm/boot/zImage",
+      "bytes": 850816,
+      "sha256": "86804270afa5d1f6e0b2d33f41dc55ae41d56b7d92091bfe6391f97dd61aa978",
+      "format": "Linux kernel ARM boot executable zImage (little-endian)"
+    },
+    {
+      "path": "./sources/iDroid-kernel-idroid-3.0.0/arch/arm/boot/Image",
+      "bytes": 1687904,
+      "sha256": "c71e87587d7f637c4ca0adc67ba5a3146a852e7d6e1808bd2cf0de7fde6c9f70",
+      "format": "data"
+    },
+    {
+      "path": "./sources/iDroid-kernel-idroid-3.0.0/.config",
+      "bytes": 23894,
+      "sha256": "750c67e7da35d5d96d7d1c9fc614296476208606152f1722287e03a7dedb8b60",
+      "format": "Linux make config build file (old)"
+    },
+    {
+      "path": "./sources/iDroid-kernel-idroid-3.0.0/arch/arm/configs/ipt4_defconfig",
+      "bytes": 23894,
+      "sha256": "750c67e7da35d5d96d7d1c9fc614296476208606152f1722287e03a7dedb8b60",
+      "format": "Linux make config build file (old)"
+    },
+    {
+      "path": "./build/phase1-published/openiboot.bin",
+      "bytes": 276384,
+      "sha256": "cd32dbac3d10a81b64226ffa4057fa8e202e699e3ff2182a7560eea077d5fbe1",
+      "format": "data"
+    },
+    {
+      "path": "./build/phase1-published/openiboot-native.bin",
+      "bytes": 282624,
+      "sha256": "890de9dbf62a25226049d43d3265020f8fa97ae8035264a5a7c4ec67304b1715",
+      "format": "data"
+    },
+    {
+      "path": "./build/T4_PUBLIC_MENU_01/live/menu.bin",
+      "bytes": 5920,
+      "sha256": "6e8bc9fd5c8372990b34290c790125c82cd9081deced0d58f7fa2914f9329a38",
+      "format": "data"
+    }
+  ],
+  "ramdisk_init_links": [
+    {
+      "path": "init",
+      "mode": 33256,
+      "uid": 0,
+      "gid": 0,
+      "size": 94168,
+      "mtime": 0,
+      "nlink": 1,
+      "rdev_major": 0,
+      "rdev_minor": 0,
+      "sha256": "d67ec53adf54cbdb9e38c6cce4d324f5f1c4908abd4630169c438134057c520f"
+    }
+  ],
+  "ramdisk_storage_script": "#!/sbin/bash\n\nexport PATH=/bin:/sbin:/system/sbin:/system/bin:/usr/sbin/\nexport LD_LIBRARY_PATH=/system/lib\n\n[ -e /dev/console ] || /sbin/busybox mknod /dev/console c 5 1 \n\n[ -e /host ] || /sbin/busybox mkdir /host\n\n/sbin/busybox mknod /dev/loop0 b 7 0 &> /dev/console\n/sbin/busybox mknod /dev/loop1 b 7 1 &> /dev/console\n/sbin/busybox mknod /dev/loop2 b 7 2 &> /dev/console\n/sbin/busybox mknod /dev/nand0p2 b 254 2 &> /dev/console\n\n/sbin/fsck.hfs -q /dev/nand0p2 &> /dev/console\nif [ $? != 0 ]\nthen\n\t/sbin/fsck.hfs /dev/nand0p2 &> /dev/console\nfi\n\n/sbin/busybox mount -n -o noatime /dev/nand0p2 /host &> /dev/console\n/sbin/busybox chmod a+rx /host &> /dev/console\n\n/sbin/busybox losetup /dev/loop0 /host/idroid/system.img &> /dev/console\n/sbin/busybox losetup /dev/loop1 /host/idroid/userdata.img &> /dev/console\n/sbin/busybox losetup /dev/loop2 /host/idroid/cache.img &> /dev/console\n\n/sbin/fsck.ext -p /dev/loop0 &> /dev/console\n/sbin/fsck.ext -p /dev/loop1 &> /dev/console\n/sbin/fsck.ext -p /dev/loop2 &> /dev/console\n\n/sbin/busybox mount -o noatime /dev/loop0 /system &> /dev/console\n/sbin/busybox mount -o noatime,nosuid,nodev /dev/loop1 /data &> /dev/console\n/sbin/busybox mount -o noatime,nosuid,nodev /dev/loop2 /cache &> /dev/console\n/sbin/busybox mount -o remount,noatime,ro /dev/loop0 /system &> /dev/console\n\nif [ -f /host/root/Library/Lockdown/activation_records/wildcard_record.plist ]\nthen\n/bin/cat /host/root/Library/Lockdown/activation_records/wildcard_record.plist > /data/wildcard_record.plist\nfi\n\nexit 0\n",
+  "unpacked_copy_properties": {
+    "system/build.prop": "# begin build properties\n# autogenerated by buildinfo.sh\nro.build.id=GINGERBREAD\nro.build.display.id=iPhone4-eng 2.3.7 GINGERBREAD eng.alby.20180311.195921 test-keys\nro.build.version.incremental=eng.alby.20180311.195921\nro.build.version.sdk=10\nro.build.version.codename=REL\nro.build.version.release=2.3.7\nro.build.date=dom 11 mar 2018, 20.00.09, CET\nro.build.date.utc=1520794809\nro.build.type=eng\nro.build.user=alby\nro.build.host=alby-Latitude-E6420\nro.build.tags=test-keys\nro.product.model=iPhone4\nro.product.brand=apple\nro.product.name=iPhone4\nro.product.device=iPhone4\nro.product.board=apple\nro.product.cpu.abi=armeabi\nro.product.manufacturer=apple\nro.product.locale.language=en\nro.product.locale.region=US\nro.wifi.channels=\nro.board.platform=apple\n# ro.build.product is obsolete; use ro.product.device\nro.build.product=iPhone4\n# Do not try to parse ro.build.description or .fingerprint\nro.build.description=iPhone4-eng 2.3.7 GINGERBREAD eng.alby.20180311.195921 test-keys\nro.build.fingerprint=apple/iPhone4/iPhone4:2.3.7/GINGERBREAD/eng.alby.20180311.195921:eng/test-keys\n# end build properties\nrild.libpath=/system/lib/hw/libril.apple.so\r\nrild.libargs=\r\nandroid.keylayout.gpio-keys=/system/usr/keylayout/gpio-keys.kl\r\nandroid.keychar.gpio-keys=/system/usr/keychars/gpio-keys.kcm\r\nwifi.interface=wlan0\r\nro.ril.enable.3g.prefix=1\r\nro.ril.oem.nosim.ecclist=911,112,113,115,117,999,000,08,118,120,122,110,119,995\r\nro.ril.emc.mode=2\r\nro.ril.hsxpa=2\r\nro.ril.gprsclass=12\r\nro.sf.lcd_density=140\r\n\n#\n# ADDITIONAL_BUILD_PROPERTIES\n#\nro.kernel.android.checkjni=1\nro.setupwizard.mode=OPTIONAL\nnet.bt.name=Android\ndalvik.vm.stack-trace-file=/data/anr/traces.txt\n"
+  },
+  "existing_system_regular_files_rehashed": 464,
+  "real_system_build_prop": "# begin build properties\n# autogenerated by buildinfo.sh\nro.build.id=GINGERBREAD\nro.build.display.id=full-eng 2.3.7 GINGERBREAD eng.alby.20180312.140349 test-keys\nro.build.version.incremental=eng.alby.20180312.140349\nro.build.version.sdk=10\nro.build.version.codename=REL\nro.build.version.release=2.3.7\nro.build.date=lun 12 mar 2018, 14.05.08, CET\nro.build.date.utc=1520859908\nro.build.type=eng\nro.build.user=alby\nro.build.host=alby-Latitude-E6420\nro.build.tags=test-keys\nro.product.model=Full Android on Emulator\nro.product.brand=Android\nro.product.name=full\nro.product.device=generic\nro.product.board=\nro.product.cpu.abi=armeabi\nro.product.manufacturer=unknown\nro.product.locale.language=en\nro.product.locale.region=US\nro.wifi.channels=\nro.board.platform=\n# ro.build.product is obsolete; use ro.product.device\nro.build.product=generic\n# Do not try to parse ro.build.description or .fingerprint\nro.build.description=full-eng 2.3.7 GINGERBREAD eng.alby.20180312.140349 test-keys\nro.build.fingerprint=Android/full/generic:2.3.7/GINGERBREAD/eng.alby.20180312.140349:eng/test-keys\n# end build properties\n#\n# system.prop for generic sdk \n#\n\nrild.libpath=/system/lib/libreference-ril.so\nrild.libargs=-d /dev/ttyS0\n\n#\n# ADDITIONAL_BUILD_PROPERTIES\n#\nkeyguard.no_require_sim=true\nro.com.android.dateformat=MM-dd-yyyy\nro.com.android.dataroaming=true\nro.config.notification_sound=OnTheHunt.ogg\nro.config.alarm_alert=Alarm_Classic.ogg\nro.ril.hsxpa=1\nro.ril.gprsclass=10\nro.kernel.android.checkjni=1\nro.setupwizard.mode=OPTIONAL\nnet.bt.name=Android\ndalvik.vm.stack-trace-file=/data/anr/traces.txt\n"
+}

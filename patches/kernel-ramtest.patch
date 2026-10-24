@@ -1,0 +1,54 @@
+--- a/arch/arm/mach-s5l8930/mach-ipodtouch4g.c
++++ b/arch/arm/mach-s5l8930/mach-ipodtouch4g.c
+@@ -115,7 +115,7 @@
+ {
+ 	s5l8930_init();
+ 
+-	s5l8930_register_h2fmi();
++	/* RAM-only bring-up: do not probe the device's NAND storage. */
+ 
+ 	//s5l8930_register_gpio_keys(buttons, ARRAY_SIZE(buttons));
+ 	s5l8930_register_mipi_dsim(&video_mode, 2, 57, 1, 3);
+--- a/arch/arm/mach-s5l8930/include/mach/entry-macro.S
++++ b/arch/arm/mach-s5l8930/include/mach/entry-macro.S
+@@ -24,25 +24,25 @@
+ 	.macro	get_irqnr_and_base, irqnr, irqstat, base, tmp
+ 	@ check the vic0
+ 	mov	\irqnr, #31
+-	ldr	\irqstat, [ \base, # VIC_IRQ_STATUS ]
++	ldr	\irqstat, [\base, #VIC_IRQ_STATUS]
+ 	teq	\irqstat, #0
+ 
+ 	@ otherwise try vic1
+ 	addeq	\tmp, \base, #(VA_VIC1 - VA_VIC0)
+ 	addeq	\irqnr, \irqnr, #32
+-	ldreq	\irqstat, [ \tmp, # VIC_IRQ_STATUS ]
++	ldreq	\irqstat, [\tmp, #VIC_IRQ_STATUS]
+ 	teqeq	\irqstat, #0
+ 
+ 	@ otherwise try vic2
+ 	addeq	\tmp, \base, #(VA_VIC2 - VA_VIC1)
+ 	addeq	\irqnr, \irqnr, #32
+-	ldreq	\irqstat, [ \tmp, # VIC_IRQ_STATUS ]
++	ldreq	\irqstat, [\tmp, #VIC_IRQ_STATUS]
+ 	teqeq	\irqstat, #0
+ 
+ 	@ otherwise try vic3
+ 	addeq	\tmp, \base, #(VA_VIC3 - VA_VIC2)
+ 	addeq	\irqnr, \irqnr, #32
+-	ldreq	\irqstat, [ \tmp, # VIC_IRQ_STATUS ]
++	ldreq	\irqstat, [\tmp, #VIC_IRQ_STATUS]
+ 	teqeq	\irqstat, #0
+ 
+ 	clzne	\irqstat, \irqstat
+--- a/kernel/timeconst.pl
++++ b/kernel/timeconst.pl
+@@ -370,7 +370,7 @@
+ 	}
+ 
+ 	@val = @{$canned_values{$hz}};
+-	if (!defined(@val)) {
++	if (!@val) {
+ 		@val = compute_values($hz);
+ 	}
+ 	output($hz, @val);

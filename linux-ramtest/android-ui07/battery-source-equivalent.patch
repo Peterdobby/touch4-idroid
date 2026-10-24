@@ -1,0 +1,21 @@
+--- a/services/jni/com_android_server_BatteryService.cpp
++++ b/services/jni/com_android_server_BatteryService.cpp
+@@ -233,8 +233,8 @@
+ 
+     DIR* dir = opendir(POWER_SUPPLY_PATH);
+     if (dir == NULL) {
+-        LOGE("Could not open %s\n", POWER_SUPPLY_PATH);
+-        return -1;
++        LOGW("Battery: UNKNOWN\n");
++        goto register_fields_without_power_supply;
+     }
+     while ((entry = readdir(dir))) {
+         const char* name = entry->d_name;
+@@ -323,6 +323,7 @@
+     if (!gPaths.batteryTechnologyPath)
+         LOGE("batteryTechnologyPath not found");
+ 
++register_fields_without_power_supply:
+     jclass clazz = env->FindClass("com/android/server/BatteryService");
+ 
+     if (clazz == NULL) {

@@ -1,0 +1,51 @@
+{
+  "upstream_commit": "c5cee8cc9e9b13784272550ab0938175cec1cdb5",
+  "baseline_public_binary_boot": "accepted, not retested",
+  "menu_reason": "upstream iPodTouch4G target does not link menu module; linked menu falls back to console when menu.lst loading fails",
+  "T4_DIAG_01": {
+    "build": "passed",
+    "first_hardware_log": "logs/T4_DIAG_01-20261018-104417.log",
+    "first_hardware_result": "no ACM device",
+    "confirmed_linker_issue": "Thumb BL retained into ARM NOTYPE assembly functions, including arm_setup -> CleanAndInvalidateCPUDataCache",
+    "compatibility_fix": "assembly function ELF type metadata; corrected BLX verified in disassembly",
+    "fixed_build_hardware_result": "white screen; no ACM; full rebuild path superseded by published-base RAM UI",
+    "fixed_hardware_log": "logs/T4_DIAG_01-20261018-105245.log"
+  },
+  "T4_MENU_01": {
+    "build": "passed",
+    "hardware_result": "not validated; superseded by successful T4_PUBLIC_MENU_01 live overlay",
+    "entries": [
+      "iOS",
+      "Test Entry",
+      "Console"
+    ],
+    "activation": "UI-only; setup_boot is never called by test menu"
+  },
+  "validation": [
+    "exact upstream commit and file tree hashes",
+    "git diff --check and reverse patch applicability",
+    "Python syntax",
+    "ARM ELF segments and wrapper payload bytes",
+    "manifest SHA256 values",
+    "version strings",
+    "NAND driver h2fmi_init absent from both ELFs",
+    "menu_main/menu_run have no script_run_file, nvram_save, setup_boot or boot_linux calls"
+  ],
+  "stage_status": "complete: user confirmed three visible menu entries and moving selection",
+  "T4_PUBLIC_MENU_01": {
+    "base": "unchanged published hardware code with existing RAM-only NAND-init guard",
+    "method": "published RAM boot then self-compiled UI module loaded via ACM",
+    "hardware_result": "passed",
+    "user_confirmation": "三项可见，选择可以移动",
+    "usb_acm": "working; button selection logs received",
+    "entries": [
+      "iOS",
+      "Test Entry",
+      "Console"
+    ],
+    "activation": "UI only; no system boot",
+    "log": "logs/public-menu-live-test.log",
+    "reproduce": "t4-menu/public-overlay/README.md",
+    "single_image_status": "compiled; corrected single-image package not hardware validated"
+  }
+}
