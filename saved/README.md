@@ -1,13 +1,13 @@
 # saved/
 
-这里保存本地生成物、下载、依赖、完整包、日志、设备专属输入和冻结成功快照。Git 只跟踪本说明和空目录标记。
+Local generated files, downloads, dependencies, complete packages, logs, device-specific inputs, and frozen successful snapshots belong here. Git tracks this README and empty directory markers only.
 
-- `build/`：构建、诊断和主机检查产物。
-- `releases/`：完整工具包及只读成功快照。
-- `packages/`：从自有包导入的运行材料。
-- `state/`：新入口的安装日志、组件缓存和审计。
-- `downloads/`、`sources/`、`research/`、`toolchain/`、`dependencies/`：上游输入和工具。
-- `private/`：本机配置、票据与校准。
-- `history/`、`experiments/`：历史和失败版本。
+- `build/`: builds, diagnostics, and host-check outputs.
+- `releases/`: complete tool packages and read-only successful snapshots.
+- `packages/`: runtime materials imported from an owned package.
+- `state/`: installation logs, component caches, and audit records for the new entry point.
+- `downloads/`, `sources/`, `research/`, `toolchain/`, `dependencies/`: upstream inputs and tools.
+- `private/`: local configuration, tickets, and calibration.
+- `history/`, `experiments/`: historical materials and failed versions.
 
-原工作区的 `build/`、`releases/` 等软链接用于兼容旧命令；实际内容已在这里。冻结成功版保持原样，新实验使用新版本目录。
+The original working tree retains compatibility symlinks such as `build/` and `releases/`; their actual contents are stored here. Frozen successful versions remain unchanged. New experiments use new version directories.

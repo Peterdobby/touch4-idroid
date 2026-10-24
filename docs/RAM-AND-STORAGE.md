@@ -1,39 +1,39 @@
-# RAM 与存储边界
+# RAM and storage
 
-本项目包含持久菜单安装和 RAM Android 运行，两者的保存范围不同。
+The project combines a persistent boot menu with an Android runtime in RAM. Their persistence boundaries are different.
 
-## 安装
+## Installation
 
-在已有 Kit SSH ramdisk 中读取主系统、身份、内核、DRA、NVRAM 和空间，确认后新增启动文件，通过现有 Apple 接口完整提交启动镜像组：LLB 在先，其余六个镜像在后。
+Inside an existing Kit SSH ramdisk, the installer reads the main system version, device identity, kernel, DRA, NVRAM, and available space. After confirmation, it adds boot files and submits the complete boot image set through the existing Apple interface: LLB first, followed by the other six images.
 
-本机文件包括 `/boot/t4/android.img3`、5.1.1 路线的 `/boot/t4/ios-iboot.img3`。原 MENU03 的 7.1.2 路线另有匹配的本地 DeviceTree 文件。
+Local files include `/boot/t4/android.img3` and, for the 5.1.1 route, `/boot/t4/ios-iboot.img3`. The original MENU03 route for 7.1.2 also uses a matching local DeviceTree file.
 
-菜单和文件可以持久保存在设备上。安装器不执行擦除、重新分区、替换原 iOS kernelcache 或设置 NVRAM。
+The menu and boot files persist on the device. The installer does not erase, repartition, replace the original iOS kernelcache, or set NVRAM variables.
 
-## Android 运行
+## Android runtime
 
-菜单通过已有 iBoot 文件接口读取 `android.img3`，校验并将内核、initramfs 和相关段放入 RAM，再交给 Linux 和 Android。启动过程中会读 NAND 上的文件；Android 运行环境仍在 RAM，没有已实现的持久 Android 数据分区。
+The menu reads `android.img3` through the existing iBoot file interface, verifies it, places the kernel, initramfs, and related sections in RAM, then hands control to Linux and Android. Booting reads files stored on NAND; Android's runtime remains in RAM, with no implemented persistent Android data partition.
 
-| 使用场景 | 当前表现 |
+| Use case | Current behavior |
 | --- | --- |
-| 桌面、真实触摸、Home 和音量键 | 已实测 |
-| ADB shell | 已实测 |
-| 修改设置、安装应用或创建数据 | 当前运行期间生效，占用 RAM，重启后不保留 |
-| Android 中访问完整 iOS 用户存储 | 不属于已实现功能 |
-| 拔线重启 | 菜单保留，Android 每次重新加载 RAM 环境 |
+| Desktop, real touch input, Home, and volume buttons | Tested on hardware |
+| ADB shell | Tested on hardware |
+| Changing settings, installing apps, or creating data | Uses RAM for the current session; not retained after reboot |
+| Accessing the complete iOS user storage from Android | Not implemented |
+| Rebooting without USB | Menu remains; Android reloads its RAM environment |
 
-有限内存需要同时容纳内核、解压后的系统文件、应用和临时数据。没有长期使用、完整休眠恢复或掉电数据保护的验证记录。
+Available memory must hold the kernel, unpacked system files, applications, and temporary data together. Long-term use, full suspend/resume, and protection of runtime data against power loss have not been validated.
 
-## saved/ 约定
+## saved/ layout
 
-| 目录 | 用途 |
+| Directory | Purpose |
 | --- | --- |
-| `saved/build/` | 编译、镜像、诊断产物 |
-| `saved/packages/` | 导入的本机完整安装包 |
-| `saved/state/` | 安装日志、组件缓存、审计 |
-| `saved/releases/` | 工具包和冻结成功快照 |
-| `saved/downloads/` | 下载缓存 |
-| `saved/private/` | 本机配置、票据、校准 |
-| `saved/history/` | 历史材料 |
+| `saved/build/` | Builds, images, and diagnostic outputs |
+| `saved/packages/` | Imported complete local installer packages |
+| `saved/state/` | Installation logs, component caches, and audit records |
+| `saved/releases/` | Tool packages and frozen successful snapshots |
+| `saved/downloads/` | Download cache |
+| `saved/private/` | Local configuration, tickets, and calibration |
+| `saved/history/` | Historical materials |
 
-Git 只保留说明和空目录标记，实际生成物和私有数据不提交。现有只读备份不等于完整 NAND/NOR 转储。
+Git tracks documentation and empty directory markers only. Generated files and private data are excluded. Existing read-only backups are not a complete NAND/NOR dump.

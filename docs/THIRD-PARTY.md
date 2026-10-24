@@ -1,15 +1,15 @@
-# 上游与许可证
+# Third-party components and licensing
 
-保留各文件中的原始版权。整合代码按根目录 GPL-3.0-or-later 发布；Linux 衍生内容和第三方源码按各自声明处理。
+Original copyright notices are retained. Project integration code is released under the root GPL-3.0-or-later license; Linux-derived content and third-party sources retain their own license terms.
 
-| 组件 | 来源 / 基线 | 许可证范围 |
+| Component | Source / baseline | License scope |
 | --- | --- | --- |
-| OpeniBoot | [iDroid-Project/openiBoot](https://github.com/iDroid-Project/openiBoot)，`c5cee8c` | GPL-3.0-or-later |
-| iDroid Linux | [iDroid-Project/iDroid-kernel](https://github.com/iDroid-Project/iDroid-kernel)，`idroid-3.0.0` | Linux GPL-2.0；内核衍生修改保留该版本 |
-| Legacy iOS Kit | [LukeZGD/Legacy-iOS-Kit](https://github.com/LukeZGD/Legacy-iOS-Kit) | 外部依赖，不随源码快照打包其完整工具集合 |
-| libirecovery 源文件 | `tools/libirecovery-1.3.1.c`，保留原始版权头 | LGPL-2.1，按原文件声明 |
-| libusb、ARM 工具链 | 外部构建依赖 | 不附带编译后二进制，保留上游许可 |
-| androidi4 / Android 用户空间 | 已有本地实验包 | 未随公开库分发，未对整个包作许可声明 |
-| Apple 固件、iBoot、DeviceTree、票据、N1 固件 | 本机自备输入 | 不包含在公开库，根许可证不覆盖它们 |
+| OpeniBoot | [iDroid-Project/openiBoot](https://github.com/iDroid-Project/openiBoot), `c5cee8c` | GPL-3.0-or-later |
+| iDroid Linux | [iDroid-Project/iDroid-kernel](https://github.com/iDroid-Project/iDroid-kernel), `idroid-3.0.0` | Linux GPL-2.0; kernel-derived changes retain this license |
+| Legacy iOS Kit | [LukeZGD/Legacy-iOS-Kit](https://github.com/LukeZGD/Legacy-iOS-Kit) | External dependency; its complete tool collection is not bundled |
+| libirecovery source | `tools/libirecovery-1.3.1.c`, original copyright header retained | LGPL-2.1, as stated in the file |
+| libusb and ARM toolchain | External build dependencies | Compiled binaries are not bundled; upstream licenses apply |
+| androidi4 / Android userspace | Existing local experimental package | Not distributed here; no license is asserted over the complete package |
+| Apple firmware, iBoot, DeviceTree, tickets, and N1 firmware | Owner-supplied inputs | Excluded from this repository; not covered by the root license |
 
-`LICENSES/` 保存相关 GNU 许可证文本。`linux-ramtest/` 中的内核源码和生成的内核修改，以及 `patches/kernel-ramtest.patch`，保留 Linux GPL-2.0 范围。公开发布未重新许可专有固件，也未移除第三方文件版权。
+`LICENSES/` contains the relevant GNU license texts. Kernel-derived sources and generated kernel changes in `linux-ramtest/`, together with `patches/kernel-ramtest.patch`, retain the Linux GPL-2.0 license scope. This release does not relicense proprietary firmware or remove third-party copyright notices.
