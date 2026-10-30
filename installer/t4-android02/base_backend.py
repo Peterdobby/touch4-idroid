@@ -50,9 +50,9 @@ def load_package(base=BASE):
     manifest = json.loads((base / 'manifest.json').read_text())
     for name, item in manifest['files'].items():
         path = base / name
-        require(path.resolve().is_relative_to(base.resolve()), '安装包包含非法路径')
+        require(path.resolve().is_relative_to(base.resolve()), 'Invalid path in package')
         data = path.read_bytes()
-        require(len(data) == item['size'] and sha(data) == item['sha256'], '安装包校验失败：' + name)
+        require(len(data) == item['size'] and sha(data) == item['sha256'], 'Package checksum failed: ' + name)
     return manifest
 
 
@@ -63,16 +63,16 @@ def read_identity(remote, probe, log, prefix='device-info'):
     save(log / (prefix + '.json'), dict(returncode=result.returncode, probe=probe))
     detail = result.stderr.decode(errors='replace').strip()[-800:]
     require(result.returncode == 0,
-            '设备身份探针未能运行（退出码 %s）；没有写入持久存储。\n%s\n日志：%s' %
+            'Device identity probe failed (exit %s); no persistent write.\n%s\nLog: %s' %
             (result.returncode, detail, log / (prefix + '.stderr')))
     try:
         device = json.loads(result.stdout)
         require(isinstance(device, dict) and isinstance(device.get('machine'), str) and
                 isinstance(device.get('ecid_candidates'), list) and device['ecid_candidates'] and
                 all(isinstance(x, str) and int(x, 0) > 0 for x in device['ecid_candidates']),
-                '设备身份探针没有返回有效 ECID；没有写入持久存储。日志：' + str(log / (prefix + '.stdout')))
+                'Identity probe returned no valid ECID; no persistent write. Log: ' + str(log / (prefix + '.stdout')))
     except (ValueError, TypeError) as error:
-        raise Stop('设备身份探针返回格式无效；没有写入持久存储。日志：' +
+        raise Stop('Invalid identity probe output; no persistent write. Log: ' +
                    str(log / (prefix + '.stdout'))) from error
     return device
 
@@ -90,7 +90,7 @@ class SSH:
             with socket.create_connection(('127.0.0.1', self.port), timeout=2):
                 pass
         except OSError as e:
-            raise Stop('SSH 转发未就绪。请在 Kit 进入 SSH ramdisk，保持端口转发，然后重试。') from e
+            raise Stop('SSH forwarding unavailable. Start the Kit SSH ramdisk, keep port forwarding active, and retry.') from e
         command = ['ssh', '-o', 'BatchMode=yes', '-o', 'ControlMaster=yes', '-o', 'ControlPersist=600'] + self.options + ['/sbin/mount']
         p = subprocess.run(command, capture_output=True, timeout=12)
         if p.returncode:
@@ -101,22 +101,22 @@ class SSH:
                 candidates.append(Path(os.environ['T4_KIT_DIR']) / 'bin/macos/sshpass')
             candidates += sorted((Path.home() / 'Desktop').glob('**/Legacy-iOS-Kit*/bin/macos/sshpass'))
             executable = next((str(p) for p in candidates if p.is_file()), shutil.which('sshpass'))
-            require(executable, '找不到 sshpass。请在菜单 3 设置现有 Kit 文件夹路径。')
+            require(executable, 'sshpass not found. Set the Kit path in the menu.')
             password = os.environ.get('T4_SSH_PASSWORD')
             if password is None:
-                password = getpass.getpass('SSH ramdisk 密码: ')
+                password = getpass.getpass('SSH ramdisk password: ')
             command = [executable, '-e', 'ssh', '-o', 'ControlMaster=yes', '-o', 'ControlPersist=600'] + self.options + ['/sbin/mount']
             env = dict(os.environ, SSHPASS=password)
             p = subprocess.run(command, env=env, capture_output=True, timeout=18)
         (self.log / 'ssh-connect.log').write_bytes(p.stdout + p.stderr)
-        require(p.returncode == 0, 'SSH 登录失败，详见 ' + str(self.log / 'ssh-connect.log'))
-        require(b'/dev/md0 on / ' in p.stdout, '当前是普通系统，未进入 SSH ramdisk；没有执行安装。')
+        require(p.returncode == 0, 'SSH login failed; see ' + str(self.log / 'ssh-connect.log'))
+        require(b'/dev/md0 on / ' in p.stdout, 'Normal iOS detected instead of SSH ramdisk; installation was not performed.')
 
     def run(self, command, data=None, timeout=60, allow_error=False):
         p = subprocess.run(['ssh', '-o', 'BatchMode=yes'] + self.options + [command], input=data,
                            capture_output=True, timeout=timeout)
         if p.returncode and not allow_error:
-            raise Stop('设备操作失败：' + command + '\n' + p.stderr.decode(errors='replace')[-600:])
+            raise Stop('Device operation failed: ' + command + '\n' + p.stderr.decode(errors='replace')[-600:])
         return p
 
     def read(self, path):
@@ -143,45 +143,45 @@ class Installer:
         path = self.ram + '/' + name
         self.r.run('/bin/mkdir -p ' + shlex.quote(self.ram))
         self.r.run('/bin/cat > ' + shlex.quote(path), data)
-        require(self.r.read(path) == data, 'RAM 文件回读不一致：' + name)
+        require(self.r.read(path) == data, 'RAM file readback mismatch: ' + name)
         if executable:
             self.r.run('/bin/chmod 700 ' + shlex.quote(path))
         return path
 
     def check(self):
         mounts = self.r.run('/sbin/mount').stdout
-        require(b'/dev/md0 on / ' in mounts, '必须在 SSH ramdisk 下运行')
+        require(b'/dev/md0 on / ' in mounts, 'SSH ramdisk is required')
         if b'/dev/disk0s1s1 on /mnt1 ' not in mounts:
             self.r.run('/bin/mkdir -p /mnt1 && /sbin/mount_hfs -o ro /dev/disk0s1s1 /mnt1')
             mounts = self.r.run('/sbin/mount').stdout
-        require(b'/dev/disk0s1s1 on /mnt1 ' in mounts, '系统卷挂载位置不匹配')
+        require(b'/dev/disk0s1s1 on /mnt1 ' in mounts, 'System volume mount does not match')
         identity = self.ram_upload('device-info', self.blob('payload/device-info'), True)
         device = read_identity(self.r, identity, self.log)
-        require(device['machine'] == 'iPod4,1', '本工具只适配 iPod touch 4G')
+        require(device['machine'] == 'iPod4,1', 'Only iPod touch 4G is supported')
         require(int(self.m['ecid'], 0) in [int(x, 0) for x in device['ecid_candidates']],
-                '设备 ECID 与当前签名包不匹配；此测试包仅用于已验证的这台 iPod')
+                'Device ECID does not match this signed package; this build is for the verified owner device')
         version_data = self.r.read('/mnt1/System/Library/CoreServices/SystemVersion.plist')
         version = plistlib.loads(version_data)
-        print('自动识别：%s / iOS %s (%s)' % (device['machine'], version['ProductVersion'], version['ProductBuildVersion']), flush=True)
+        print('Detected: %s / iOS %s (%s)' % (device['machine'], version['ProductVersion'], version['ProductBuildVersion']), flush=True)
         self.log.joinpath('SystemVersion.plist').write_bytes(version_data)
         profile = next((p for p in self.m['profiles'] if p['version'] == version['ProductVersion'] and p['build'] == version['ProductBuildVersion']), None)
-        require(profile is not None, '已识别该系统，但本测试版没有经过验证的匹配配置；停止安装。')
+        require(profile is not None, 'System detected, but no verified matching profile exists; installation stopped.')
         kernel = self.r.read('/mnt1' + profile['kernel_path'])
-        require(sha(kernel) in profile['kernel_sha256'], '系统版本已识别，但内核与已验证配置不匹配；停止安装。')
+        require(sha(kernel) in profile['kernel_sha256'], 'System version detected, but the kernel does not match the verified profile; installation stopped.')
         self.log.joinpath('original-kernelcache').write_bytes(kernel)
         nvram = self.r.run('/usr/sbin/nvram -p').stdout
         values = dict(line.split(b'\t', 1) for line in nvram.splitlines() if b'\t' in line)
         require(values.get(b'boot-partition') == b'2' and values.get(b'boot-ramdisk') == BOOTRAMDISK.encode(),
-                '未识别到匹配的 Kit DRA6 启动环境；本工具不修改 NVRAM。')
+                'Matching Kit DRA6 boot environment not found; NVRAM will not be changed.')
         dra = self.r.run('/bin/dd if=/dev/rdisk0s1s3 bs=16384 count=32').stdout
-        require(len(dra) == 524288 and sha(dra) == self.m['dra_sha256'], 'DRA6 分区与已验证输入不匹配；停止安装。')
+        require(len(dra) == 524288 and sha(dra) == self.m['dra_sha256'], 'DRA6 partition differs from the verified input; installation stopped.')
         self.log.joinpath('nvram-before.txt').write_bytes(nvram)
         self.log.joinpath('existing-dra.bin').write_bytes(dra)
         llb = self.ram_upload('LLB.img3', self.blob('payload/LLB.img3'))
         probe = self.ram_upload('check-llb', self.blob('payload/check-llb'), True)
         result = self.r.run(shlex.quote(probe) + ' ' + shlex.quote(llb), allow_error=True)
         self.log.joinpath('signed-llb-check.log').write_bytes(result.stdout + result.stderr)
-        require(result.returncode == 0 and b'result=00000000' in result.stdout, '签名启动镜像预检查未通过；没有执行持久写入。')
+        require(result.returncode == 0 and b'result=00000000' in result.stdout, 'Signed boot image preflight failed; no persistent write performed.')
         self.r.run('test -d /mnt1/boot && test ! -L /mnt1/boot')
         self.r.run('test ! -L /mnt1/boot/t4')
         existing, needed = {}, 0
@@ -191,28 +191,28 @@ class Installer:
             found = self.r.run('test -e ' + shlex.quote(dest), allow_error=True).returncode == 0
             if found:
                 data = self.r.read(dest)
-                require(sha(data) == self.m['files'][item['source']]['sha256'], '已有同名启动文件内容不同，保留原文件并停止：' + dest)
+                require(sha(data) == self.m['files'][item['source']]['sha256'], 'Existing boot file differs; original retained: ' + dest)
                 self.log.joinpath(Path(dest).name + '.existing.sha256').write_text(sha(data) + '\n')
             else:
                 needed += self.m['files'][item['source']]['size']
             existing[dest] = found
         header = self.r.run('/bin/dd if=/dev/rdisk0s1s1 bs=8192 count=1').stdout
-        require(len(header) == 8192 and header[1024:1026] in [b'H+', b'HX'], '不是已支持的 HFS 系统卷')
+        require(len(header) == 8192 and header[1024:1026] in [b'H+', b'HX'], 'Unsupported HFS system volume')
         block_size, total, free = struct.unpack_from('>III', header, 1024+40)
-        require(0 < block_size <= 1048576 and free <= total, 'HFS 空间信息异常')
-        require(block_size * free >= needed + 16*1024*1024, '系统卷空间不足，需要启动文件大小另加 16 MiB 余量')
+        require(0 < block_size <= 1048576 and free <= total, 'Invalid HFS free-space information')
+        require(block_size * free >= needed + 16*1024*1024, 'Insufficient system volume space; boot files plus 16 MiB required')
         self.info = dict(model=device['machine'], ecid=self.m['ecid'], version=version['ProductVersion'],
                          build=version['ProductBuildVersion'], profile=profile['id'], kernel_sha256=sha(kernel),
                          free_bytes=block_size*free, new_file_bytes=needed, existing=existing,
                          persistent_writes=False, mounts=mounts.decode(errors='replace'))
         save(self.log / 'CHECK.json', self.info)
         self.nvram = nvram
-        print('匹配配置：%s；新增文件 %.1f MiB；现有同内容文件将复用。' % (profile['id'], needed/1048576), flush=True)
+        print('Matching profile: %s; %.1f MiB of new files; identical existing files will be reused.' % (profile['id'], needed/1048576), flush=True)
         return self.info
 
     def reuse_completed_install(self):
         """Recognize an accepted identical submission in this RAM session only."""
-        require(self.info is not None, '请先完成本次连接的设备检查')
+        require(self.info is not None, 'Complete device checks first')
         path = self.state / (self.m['ecid'] + '.json')
         if not path.is_file():
             return False
@@ -250,25 +250,25 @@ class Installer:
             if not self.info['existing'].get('/mnt1' + item['destination']):
                 return False
             require(self.r.read('/mnt1' + item['destination']) == self.blob(item['source']),
-                    '检查后启动文件发生变化；停止')
+                    'Boot file changed after check; stopped')
         save(self.log / 'REUSED-COMPLETE.json', dict(original_log=str(old_log),
              same_ram_session=True, package_sha256=previous['package_sha256'],
              persistent_writes=False, firmware_resubmitted=False, cold_boot_confirmed=False))
-        print('本次 ramdisk 中已成功提交相同安装；启动文件已核对，本次不重复写入。', flush=True)
-        print('遗留 RAM 锁在重启后自动清除。请退出工具并重启，测试三项菜单。', flush=True)
+        print('The same installation was already submitted in this ramdisk session; boot files match and firmware will not be written again.', flush=True)
+        print('The remaining RAM lock clears on reboot. Exit and reboot to test the menu.', flush=True)
         return True
 
     def install(self):
-        require(self.info is not None, '请先完成本次连接的设备检查')
+        require(self.info is not None, 'Complete device checks first')
         if self.reuse_completed_install():
             return
         previous_path = self.state / (self.m['ecid'] + '.json')
         if previous_path.exists():
             previous = json.loads(previous_path.read_text())
-            require(previous.get('status') in ['COMPLETE', 'FILES_BEGIN'], '存在未完成的固件提交记录，停止重试：' + str(previous_path))
+            require(previous.get('status') in ['COMPLETE', 'FILES_BEGIN'], 'Incomplete firmware submission recorded; retry stopped: ' + str(previous_path))
         lock = self.r.run('/bin/mkdir /t4-android-install.lock', allow_error=True)
         require(lock.returncode == 0,
-                'RAM 安装锁已存在，但不能确认为本次已完成安装；未重复提交固件。保持 ramdisk 并检查先前日志。')
+                'RAM installation lock exists but completion cannot be confirmed; no firmware resubmitted. Keep the ramdisk open and inspect earlier logs.')
         # Transfer every updater input to the ramdisk before persistent writes.
         helper = self.ram_upload('apply-set', self.blob('payload/apply-set'), True)
         package = self.ram_upload('boot-set.pack', self.blob('payload/boot-set.pack'))
@@ -276,8 +276,8 @@ class Installer:
                      device=self.info, package_sha256=sha(self.blob('payload/boot-set.pack')))
         save(previous_path, state)
         # Revalidate identity-relevant state after the user has reviewed the plan.
-        require(self.r.run('/usr/sbin/nvram -p').stdout == self.nvram, 'NVRAM 在检查后发生变化，停止安装')
-        require(b'/dev/md0 on / ' in self.r.run('/sbin/mount').stdout, '设备已离开 ramdisk')
+        require(self.r.run('/usr/sbin/nvram -p').stdout == self.nvram, 'NVRAM changed after the check; installation stopped')
+        require(b'/dev/md0 on / ' in self.r.run('/sbin/mount').stdout, 'Device left the ramdisk')
         mounts = self.r.run('/sbin/mount').stdout
         line = next(x for x in mounts.splitlines() if b'/dev/disk0s1s1 on /mnt1 ' in x)
         if b'read-only' in line:
@@ -287,22 +287,22 @@ class Installer:
             dest = '/mnt1' + item['destination']
             data = self.blob(item['source'])
             if self.info['existing'][dest]:
-                require(self.r.read(dest) == data, '检查后启动文件发生变化；停止')
+                require(self.r.read(dest) == data, 'Boot file changed after check; stopped')
                 continue
             temporary = dest + '.t4installer-partial'
             self.r.run('test ! -e ' + shlex.quote(dest) + ' && test ! -L ' + shlex.quote(dest) +
                        ' && test ! -e ' + shlex.quote(temporary) + ' && test ! -L ' + shlex.quote(temporary))
             self.r.run('/bin/cat > ' + shlex.quote(temporary), data)
-            require(self.r.read(temporary) == data, '启动文件回读不一致，未更新固件')
+            require(self.r.read(temporary) == data, 'Boot file readback mismatch; firmware not updated')
             self.r.run('/bin/chmod 444 ' + shlex.quote(temporary) + ' && test ! -e ' + shlex.quote(dest) +
                        ' && /bin/mv ' + shlex.quote(temporary) + ' ' + shlex.quote(dest))
         self.r.run('/mnt1/bin/sync')
         # Both full files and unchanged iOS/NVRAM must be confirmed before NOR API.
         for item in self.m['runtime_files']:
-            require(self.r.read('/mnt1' + item['destination']) == self.blob(item['source']), '启动文件最终校验失败')
+            require(self.r.read('/mnt1' + item['destination']) == self.blob(item['source']), 'Final boot file verification failed')
         profile = next(p for p in self.m['profiles'] if p['id'] == self.info['profile'])
-        require(sha(self.r.read('/mnt1' + profile['kernel_path'])) == self.info['kernel_sha256'], '原 iOS 内核发生变化，停止')
-        require(self.r.run('/usr/sbin/nvram -p').stdout == self.nvram, 'NVRAM 发生变化，停止')
+        require(sha(self.r.read('/mnt1' + profile['kernel_path'])) == self.info['kernel_sha256'], 'Original iOS kernel changed; stopped')
+        require(self.r.run('/usr/sbin/nvram -p').stdout == self.nvram, 'NVRAM changed; stopped')
         state['status'] = 'FIRMWARE_BEGIN'
         save(previous_path, state)
         save(self.log / 'APPLY-ATTEMPT.json', state)
@@ -318,12 +318,12 @@ class Installer:
         if not state['api_accepted']:
             state['status'] = 'FIRMWARE_INCOMPLETE_KEEP_RAMDISK'
             save(previous_path, state); save(self.log / 'APPLY-ATTEMPT.json', state)
-            raise Stop('启动镜像提交未完整成功。保持 ramdisk，不重启；日志：' + str(self.log))
+            raise Stop('Firmware image submission did not fully succeed. Keep the ramdisk open; log: ' + str(self.log))
         after = self.r.run('/usr/sbin/nvram -p').stdout
         state.update(status='COMPLETE' if after == self.nvram else 'FIRMWARE_ACCEPTED_STATE_CHECK_FAILED',
                      nvram_unchanged=after == self.nvram, cold_boot_confirmed=False)
         save(previous_path, state); save(self.log / 'APPLY-ATTEMPT.json', state)
-        require(state['nvram_unchanged'], '镜像已提交，但 NVRAM 校验不一致；保持 ramdisk 并检查日志')
+        require(state['nvram_unchanged'], 'Images submitted but NVRAM verification differs; keep the ramdisk open and inspect logs')
         # Kit ramdisks may omit rmdir. mv is already required for the installed
         # runtime files; archive our RAM lock under this job's RAM directory.
         # Cleanup must not turn a recorded, accepted firmware update into an
@@ -340,10 +340,10 @@ class Installer:
         save(self.log / 'ram-lock-cleanup.json', cleanup)
         state['ram_lock_released'] = cleanup['released']
         save(previous_path, state); save(self.log / 'APPLY-ATTEMPT.json', state)
-        print('安装提交成功。原 iOS 内核、NVRAM 保持一致；Android 仍是 RAM 运行版。', flush=True)
+        print('Installation submitted successfully. Original iOS kernel and NVRAM match; Android remains RAM-only.', flush=True)
         if not cleanup['released']:
-            print('收尾提示：RAM 安装锁未能清理，重启后自动清除；安装已成功提交，无需重新安装。', flush=True)
-        print('尚未自动重启。请退出 Kit 的 ramdisk，或按电源键＋Home 重启，测试三项菜单。', flush=True)
+            print('Cleanup: the RAM lock could not be cleared and will clear on reboot. Installation succeeded; no reinstall needed.', flush=True)
+        print('Automatic reboot is disabled. Exit Kit ramdisk or reboot with Power + Home, then test the menu.', flush=True)
 
 
 def main():
@@ -353,12 +353,12 @@ def main():
     parser.add_argument('--kit', type=Path)
     parser.add_argument('--state-dir', type=Path, default=Path.home() / 'Library/Application Support/T4-Android-Installer-01')
     args = parser.parse_args()
-    require(1 <= args.port <= 65535, 'SSH 端口范围错误')
+    require(1 <= args.port <= 65535, 'Invalid SSH port')
     manifest = load_package()
-    print('电脑端安装包 SHA-256 校验通过；目标 ECID：' + manifest['ecid'], flush=True)
+    print('Host package SHA-256 verified; target ECID: ' + manifest['ecid'], flush=True)
     if args.action == 'verify':
         return
-    require(sys.platform == 'darwin', '首版测试环境为 macOS，设备端使用现有 Kit SSH ramdisk')
+    require(sys.platform == 'darwin', 'macOS and the existing Kit SSH ramdisk are required')
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6]
     log = args.state_dir / 'logs' / stamp
     log.mkdir(parents=True)
@@ -367,11 +367,11 @@ def main():
         remote.connect()
         installer = Installer(remote, manifest, BASE, log, args.state_dir / 'devices')
         info = installer.check()
-        print('本次日志：' + str(log), flush=True)
+        print('Log: ' + str(log), flush=True)
         if args.action == 'install':
-            print('\n将安装 iOS / Android / Console 菜单及两份启动文件。会更新持久启动固件；不擦除、不分区、不写 NVRAM。')
-            if input('确认在这台 %s / iOS %s 上安装？[y/N]: ' % (info['ecid'], info['version'])).strip().lower() != 'y':
-                print('已取消，没有写入持久存储。'); return
+            print('\nThis installs the iOS / Android / Console menu and two boot files and updates persistent boot firmware. No erase, repartition or NVRAM changes.')
+            if input('Install on device %s / iOS %s? [y/N]: ' % (info['ecid'], info['version'])).strip().lower() != 'y':
+                print('Cancelled; no persistent write performed.'); return
             installer.install()
     except BaseException as e:
         save(log / 'ERROR.json', dict(type=type(e).__name__, message=str(e)))
@@ -384,8 +384,8 @@ if __name__ == '__main__':
     try:
         main()
     except (Stop, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as e:
-        print('\n停止：' + str(e), file=sys.stderr)
+        print('\nStopped: ' + str(e), file=sys.stderr)
         sys.exit(1)
     except (KeyboardInterrupt, EOFError):
-        print('\n已中断。若已进入固件提交阶段，请保持 ramdisk 并查看日志。', file=sys.stderr)
+        print('\nInterrupted. If firmware submission began, keep the ramdisk open and inspect the log.', file=sys.stderr)
         sys.exit(130)

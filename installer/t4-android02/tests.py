@@ -267,7 +267,7 @@ class InstallerTests(unittest.TestCase):
         self.device.directories.add('/t4-android-install.lock')
         again=self.next_connection()
         self.assertFalse(again.reuse_completed_install())
-        with self.assertRaisesRegex(b.Stop,'RAM 安装锁已存在'):again.install()
+        with self.assertRaisesRegex(b.Stop,'RAM installation lock exists'):again.install()
         self.assertEqual(self.device.firmware_calls,1)
         self.assertIn('/t4-android-install.lock',self.device.directories)
 

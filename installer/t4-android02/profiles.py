@@ -33,24 +33,24 @@ def sha(data):
 
 
 def image_data(image, kind=None):
-    require(len(image) >= 32, 'Image3 文件过短')
+    require(len(image) >= 32, 'Image3 file is too short')
     magic, total, length, _, actual = struct.unpack_from('<5I', image)
-    require(magic == 0x496d6733 and total == len(image) and length == total-20, 'Image3 头部无效')
-    require(kind is None or actual == kind, 'Image3 类型不匹配')
+    require(magic == 0x496d6733 and total == len(image) and length == total-20, 'Invalid Image3 header')
+    require(kind is None or actual == kind, 'Image3 type mismatch')
     offset, found = 20, []
     while offset < len(image):
-        require(offset + 12 <= len(image), 'Image3 元素截断')
+        require(offset + 12 <= len(image), 'Truncated Image3 tag')
         tag, size, n = struct.unpack_from('<3I', image, offset)
-        require(size >= 12 and offset+size <= len(image) and n <= size-12, 'Image3 元素越界')
+        require(size >= 12 and offset+size <= len(image) and n <= size-12, 'Image3 tag out of bounds')
         if tag == 0x44415441:
             found.append(image[offset+12:offset+12+n])
         offset += size
-    require(offset == len(image) and len(found) == 1, 'Image3 DATA 不唯一')
+    require(offset == len(image) and len(found) == 1, 'Image3 DATA is not unique')
     return found[0]
 
 
 def patch_flags(version):
-    require(re.fullmatch(r'[456]\.\d+(?:\.\d+)?', version), '仅处理正式 iOS 4/5/6 版本')
+    require(re.fullmatch(r'[456]\.\d+(?:\.\d+)?', version), 'Only official iOS 4/5/6 releases are supported')
     flags = ['--rsa', '--boot-partition', '--boot-ramdisk']
     if version.startswith('4.'):
         flags += ['--logo4']
@@ -78,12 +78,12 @@ def find_kit(explicit=None):
         directory = path / 'bin/macos'
         if all((directory / name).is_file() for name in names):
             return directory
-    raise ProfileError('请用 --kit 指定现有 Legacy-iOS-Kit 文件夹')
+    raise ProfileError('Specify an existing Legacy iOS Kit folder with --kit')
 
 
 def apple_url(url):
     parsed = urllib.parse.urlsplit(url)
-    require(parsed.scheme in ['https', 'http'] and parsed.hostname and parsed.hostname.endswith('.apple.com'), '固件下载地址不是 Apple 域名')
+    require(parsed.scheme in ['https', 'http'] and parsed.hostname and parsed.hostname.endswith('.apple.com'), 'Firmware download URL is not on an Apple domain')
     return urllib.parse.urlunsplit(('https', parsed.netloc, parsed.path, parsed.query, parsed.fragment))
 
 
@@ -91,7 +91,7 @@ def fetch_json(url, destination):
     request = urllib.request.Request(url, headers={'User-Agent': 'T4-Android-Installer/02'})
     with urllib.request.urlopen(request, timeout=35) as response:
         data = response.read(4*1024*1024 + 1)
-    require(len(data) <= 4*1024*1024, '元数据过大')
+    require(len(data) <= 4*1024*1024, 'Metadata too large')
     value = json.loads(data)
     destination.write_bytes(data)
     return value
@@ -99,44 +99,44 @@ def fetch_json(url, destination):
 
 def package_set(images):
     kinds = [0x696c6c62, 0x69626f74, 0x64747265, 0x6c6f676f, 0x7265636d, 0x69626f62, 0x53434142]
-    require(len(images) == 7 and sum(map(len, images)) < 0x180000, '启动镜像组超出容量')
+    require(len(images) == 7 and sum(map(len, images)) < 0x180000, 'Boot image set exceeds capacity')
     data = bytearray(struct.pack('<4I', 0x4f423454, 2, 7, 0))
     for index, (blob, kind) in enumerate(zip(images, kinds)):
         image_data(blob, kind)
-        require(len(blob) <= 0xc0000, '单个启动镜像过大')
+        require(len(blob) <= 0xc0000, 'Boot image too large')
         data += struct.pack('<4I', 0 if index == 0 else 1, len(blob), kind, zlib.crc32(blob))
         data += blob
         data += bytes((-len(data)) % 4)
     struct.pack_into('<I', data, 12, zlib.crc32(data[16:]))
-    require(len(data) <= 0x180000, '安装包超出容量')
+    require(len(data) <= 0x180000, 'Package exceeds capacity')
     return bytes(data)
 
 
 def unpack_set(data):
-    require(len(data) >= 16, '启动镜像组头部截断')
+    require(len(data) >= 16, 'Truncated boot image set header')
     magic, version, count, checksum = struct.unpack_from('<4I', data)
     require((magic, version, count) == (0x4f423454, 2, 7) and checksum == zlib.crc32(data[16:]),
-            '启动镜像组校验失败')
+            'Boot image set verification failed')
     images, offset = [], 16
     kinds = [0x696c6c62, 0x69626f74, 0x64747265, 0x6c6f676f, 0x7265636d, 0x69626f62, 0x53434142]
     for index, kind in enumerate(kinds):
-        require(offset + 16 <= len(data), '启动镜像组记录截断')
+        require(offset + 16 <= len(data), 'Truncated boot image set record')
         selector, size, actual, checksum = struct.unpack_from('<4I', data, offset)
         offset += 16
         require(selector == (0 if index == 0 else 1) and actual == kind and
-                size <= len(data) - offset, '启动镜像组记录无效')
+                size <= len(data) - offset, 'Invalid boot image set record')
         image = data[offset:offset+size]
-        require(zlib.crc32(image) == checksum, '启动镜像 CRC 不匹配')
+        require(zlib.crc32(image) == checksum, 'Boot image CRC mismatch')
         image_data(image, kind)
         images.append(image)
         offset += (size + 3) & ~3
-    require(offset == len(data), '启动镜像组存在多余内容')
+    require(offset == len(data), 'Unexpected trailing data in boot image set')
     return images
 
 
 def base_images(base):
     names = json.loads((base / 'payload/base-images.json').read_text())['order']
-    require(len(names) == 7, '基础镜像组数量错误')
+    require(len(names) == 7, 'Incorrect base image count')
     return [(base / 'payload/base-images' / name).read_bytes() for name in names]
 
 
@@ -147,11 +147,11 @@ def ensure_base_firmware(base, directory):
     actual, expected = unpack_set(original), base_images(base)
     require(all(actual[i] == expected[i] for i in [0, 1, 3, 4, 6]) and
             actual[5] == (directory / 'payload/menu.img3').read_bytes(),
-            '缓存不是已识别的基础启动链；保留原文件并停止')
+            'Cache does not match a recognized base boot chain; original retained')
     if actual[2] == expected[2]:
         return
     require(actual[2] == (directory / 'payload/target-dt.img3').read_bytes(),
-            '缓存 DeviceTree 不属于已识别的旧配置；保留原文件并停止')
+            'Cached DeviceTree does not match the recognized old profile; original retained')
     # Preserve every previous input before atomically replacing this host pack.
     history = directory.parent / '.history' / directory.name / sha(original)
     if not history.exists():
@@ -161,7 +161,7 @@ def ensure_base_firmware(base, directory):
         os.rename(staging / 'profile', history)
         staging.rmdir()
     require((history / 'payload/boot-set.pack').read_bytes() == original,
-            '先前配置备份不完整；保留原配置并停止')
+            'Previous profile backup incomplete; original retained')
     actual[2] = expected[2]
     fixed = package_set(actual)
     target = directory / 'payload/boot-set.pack'
@@ -184,7 +184,7 @@ def ensure_base_firmware(base, directory):
     temporary.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
     os.replace(temporary, directory / 'manifest.json')
     verify_profile(directory)
-    print('已修正电脑端配置：保留完整 10B500 基础启动组件；旧配置备份：' + str(history), flush=True)
+    print('Host profile corrected: complete 10B500 base components retained; old profile backup: ' + str(history), flush=True)
 
 
 def link_or_copy(source, target):
@@ -200,9 +200,9 @@ def verify_profile(directory):
     manifest = json.loads((directory / 'manifest.json').read_text())
     for name, record in manifest['files'].items():
         path = directory / name
-        require(path.resolve().is_relative_to(directory.resolve()), '配置包含越界路径')
+        require(path.resolve().is_relative_to(directory.resolve()), 'Profile path escapes its directory')
         data = path.read_bytes()
-        require(len(data) == record['size'] and sha(data) == record['sha256'], '缓存校验失败：' + name)
+        require(len(data) == record['size'] and sha(data) == record['sha256'], 'Cache checksum failed: ' + name)
     return manifest
 
 
@@ -226,7 +226,7 @@ def refresh_cached_identity(base, directory):
     temporary.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
     os.replace(temporary, path)
     verify_profile(directory)
-    print('已更新电脑缓存中的只读身份探针。', flush=True)
+    print('Read-only device identity probe updated in host cache.', flush=True)
 
 
 @contextlib.contextmanager
@@ -238,14 +238,14 @@ def preparation_dir(cache):
         (work / 'ERROR.txt').write_text(type(error).__name__ + ': ' + str(error) + '\n')
         if isinstance(error, (KeyboardInterrupt, SystemExit)):
             raise
-        raise ProfileError(str(error) + '\n保留的组件与失败日志：' + str(work)) from error
+        raise ProfileError(str(error) + '\nRetained components and failure logs: ' + str(work)) from error
     else:
         shutil.rmtree(work)
 
 
 def prepare(base, cache, version, build=None, kit=None):
     patch_flags(version)
-    require(build is None or re.fullmatch(r'[0-9A-Z]+', build), '非法 build 标识')
+    require(build is None or re.fullmatch(r'[0-9A-Z]+', build), 'Invalid build identifier')
     cache.mkdir(parents=True, exist_ok=True)
     for parent in [cache, base / 'ready-profiles']:
         if not parent.exists():
@@ -263,10 +263,10 @@ def prepare(base, cache, version, build=None, kit=None):
         if parent == cache:
             refresh_cached_identity(base, directory)
             ensure_base_firmware(base, directory)
-            print('复用已校验的组件配置：' + record['build'], flush=True)
+            print('Reusing verified component profile: ' + record['build'], flush=True)
             return directory
         destination = cache / record['build']
-        require(not destination.exists(), '配置目标已存在但未通过匹配检查')
+        require(not destination.exists(), 'Profile destination already exists but did not pass matching checks')
         with preparation_dir(cache) as staging:
             output = staging / 'bundle'
             shutil.copytree(directory, output)
@@ -276,7 +276,7 @@ def prepare(base, cache, version, build=None, kit=None):
             verify_profile(output)
             ensure_base_firmware(base, output)
             os.rename(output, destination)
-        print('已展开随包准备的官方组件配置：' + record['build'], flush=True)
+        print('Extracted included official component profile: ' + record['build'], flush=True)
         return destination
     tools = find_kit(kit)
     if build and (cache / build / 'manifest.json').exists():
@@ -284,15 +284,15 @@ def prepare(base, cache, version, build=None, kit=None):
         ensure_base_firmware(base, cache / build)
         result = verify_profile(cache / build)
         p = result['profiles'][0]
-        require(p['version'] == version and p['build'] == build, '缓存版本不匹配')
-        print('复用已校验的组件配置：' + build, flush=True)
+        require(p['version'] == version and p['build'] == build, 'Cached version mismatch')
+        print('Reusing verified component profile: ' + build, flush=True)
         return cache / build
     with preparation_dir(cache) as work:
         catalog = fetch_json('https://api.ipsw.me/v4/device/' + urllib.parse.quote(MODEL, safe='') + '?type=ipsw', work / 'catalog.json')
         choices = [f for f in catalog['firmwares'] if f['identifier'] == MODEL and f['version'] == version and (build is None or f['buildid'] == build)]
-        require(len(choices) == 1, '固件版本不存在或 build 不唯一，请明确指定 --build')
+        require(len(choices) == 1, 'Firmware version not found or build ambiguous; specify --build')
         firmware = choices[0];build = firmware['buildid']
-        require(re.fullmatch(r'[0-9A-Z]+', build), '非法 build 标识')
+        require(re.fullmatch(r'[0-9A-Z]+', build), 'Invalid build identifier')
         destination = cache / build
         if destination.exists():
             refresh_cached_identity(base, destination)
@@ -304,50 +304,50 @@ def prepare(base, cache, version, build=None, kit=None):
             p = subprocess.run([str(x) for x in command], cwd=work, capture_output=True, timeout=timeout)
             (work / log).write_bytes(p.stdout + p.stderr)
             ok = patcher_result_ok(p.returncode, p.stdout+p.stderr, (work/'iBoot.kit.raw').is_file()) if kit_patcher else p.returncode == 0
-            require(ok, '组件工具失败：' + log + '\n' + (p.stdout+p.stderr).decode(errors='replace')[-1000:])
+            require(ok, 'Component tool failed: ' + log + '\n' + (p.stdout+p.stderr).decode(errors='replace')[-1000:])
 
         def download(member, name):
-            require(not member.startswith('/') and '..' not in Path(member).parts, '固件成员路径无效')
-            print('分段下载：' + Path(member).name, flush=True)
+            require(not member.startswith('/') and '..' not in Path(member).parts, 'Invalid firmware member path')
+            print('Downloading component: ' + Path(member).name, flush=True)
             # pzb's output argument is relative to cwd; never pass an absolute output.
             run([tools / 'pzb', '-g', member, '-o', name, url], name + '.download.log')
             path = work / name
-            require(path.is_file() and 0 < path.stat().st_size <= 2*1024*1024, '组件未正确保存：' + name)
+            require(path.is_file() and 0 < path.stat().st_size <= 2*1024*1024, 'Component was not saved correctly: ' + name)
             return path.read_bytes()
 
         manifest_bytes = download('BuildManifest.plist', 'BuildManifest.plist')
         apple = plistlib.loads(manifest_bytes)
-        require(apple['ProductVersion'] == version and apple['ProductBuildVersion'] == build and MODEL in apple.get('SupportedProductTypes', []), 'Apple 清单与目标版本不匹配')
+        require(apple['ProductVersion'] == version and apple['ProductBuildVersion'] == build and MODEL in apple.get('SupportedProductTypes', []), 'Apple manifest does not match target version')
         identities = [i for i in apple['BuildIdentities'] if i['Info']['DeviceClass'] == 'n81ap']
-        require(identities, '固件清单不包含 N81AP')
+        require(identities, 'Firmware manifest lacks N81AP')
         component = identities[0]['Manifest']
         for kind in ['iBoot', 'DeviceTree']:
-            require(all(i['Manifest'][kind]['Info']['Path'] == component[kind]['Info']['Path'] for i in identities), '同一固件的启动组件存在歧义')
+            require(all(i['Manifest'][kind]['Info']['Path'] == component[kind]['Info']['Path'] for i in identities), 'Boot components differ between firmware identities')
         stock = download(component['iBoot']['Info']['Path'], 'iBoot.original.img3')
         dt = download(component['DeviceTree']['Info']['Path'], 'DeviceTree.original.img3')
         image_data(stock, 0x69626f74);image_data(dt, 0x64747265)
         keys_url = 'https://raw.githubusercontent.com/LukeZGD/Legacy-iOS-Kit-Keys/' + KEYS_COMMIT + '/' + MODEL + '/' + build + '/index.html'
         keys = fetch_json(keys_url, work / 'keys.json')
-        require(keys['identifier'] == MODEL and keys['buildid'] == build, 'Kit 密钥清单的设备或版本不匹配')
+        require(keys['identifier'] == MODEL and keys['buildid'] == build, 'Kit key manifest does not match device or version')
         key = next(k for k in keys['keys'] if k['image'] == 'iBoot')
-        require(key['filename'] == Path(component['iBoot']['Info']['Path']).name, 'iBoot 文件名与密钥不匹配')
+        require(key['filename'] == Path(component['iBoot']['Info']['Path']).name, 'iBoot filename does not match key manifest')
         iv, aes = key['iv'].zfill(32), key['key'].zfill(64)
-        require(re.fullmatch('[0-9a-fA-F]{32}', iv) and re.fullmatch('[0-9a-fA-F]{64}', aes), 'iBoot 解密参数无效')
+        require(re.fullmatch('[0-9a-fA-F]{32}', iv) and re.fullmatch('[0-9a-fA-F]{64}', aes), 'Invalid iBoot decryption parameters')
         run([tools / 'xpwntool', 'iBoot.original.img3', 'iBoot.raw', '-iv', iv, '-k', aes], 'iboot-decrypt.log')
         raw = (work / 'iBoot.raw').read_bytes()
-        require(0x400 <= len(raw) <= 0x80000 and struct.unpack_from('<I', raw)[0] & 0xff000000 == 0xea000000 and b'iBoot-' in raw, 'iBoot 解密后格式不正确')
+        require(0x400 <= len(raw) <= 0x80000 and struct.unpack_from('<I', raw)[0] & 0xff000000 == 0xea000000 and b'iBoot-' in raw, 'Invalid decrypted iBoot format')
         flags = patch_flags(version)
         run([tools / 'iBoot32Patcher', 'iBoot.raw', 'iBoot.kit.raw', *flags], 'existing-kit-patcher.log', kit_patcher=True)
         target = (work / 'iBoot.kit.raw').read_bytes()
-        require(len(target) == len(raw) and target[:4] == raw[:4], 'Kit iBoot 输出大小或入口异常')
+        require(len(target) == len(raw) and target[:4] == raw[:4], 'Unexpected Kit iBoot output size or entry point')
         run([tools / 'img3maker', '-f', 'iBoot.kit.raw', '-o', 'ios-iboot.img3', '-t', 'ibob'], 'iboot-package.log')
-        require(image_data((work / 'ios-iboot.img3').read_bytes(), 0x69626f62) == target, 'iBoot 包装改变了 payload')
+        require(image_data((work / 'ios-iboot.img3').read_bytes(), 0x69626f62) == target, 'iBoot packaging changed the payload')
         template = json.loads((base / 'payload/menu-template.json').read_text())
         menu = bytearray((base / 'payload/menu-template.img3').read_bytes())
-        require(sha(menu) == template['sha256'], '菜单模板校验失败')
+        require(sha(menu) == template['sha256'], 'Menu template verification failed')
         for field, value in [('t4_ios_size', len(target)), ('t4_ios_crc', zlib.crc32(target))]:
             off = template['patches'][field]
-            require(struct.unpack_from('<I', menu, off)[0] == 0, '模板配置位置不为空')
+            require(struct.unpack_from('<I', menu, off)[0] == 0, 'Template patch location is not empty')
             struct.pack_into('<I', menu, off, value)
         images = base_images(base)
         images[5] = bytes(menu)
@@ -385,5 +385,5 @@ def prepare(base, cache, version, build=None, kit=None):
         (bundle / 'manifest.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
         os.rename(bundle, destination)
         verify_profile(destination)
-        print('持久安装配置已生成：iOS '+version+' / '+build, flush=True)
+        print('Persistent installation profile generated: iOS '+version+' / '+build, flush=True)
         return destination

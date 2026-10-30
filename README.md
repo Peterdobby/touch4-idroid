@@ -9,7 +9,13 @@
 
 An experimental **iOS / Android / Console** boot menu for iPod touch 4G devices with an existing Kit DRA6 / DRV6 boot environment. The menu boots without a computer attached. Android reaches the desktop, with real touchscreen input, hardware buttons, and an ADB shell verified on hardware.
 
-This repository contains source code, build scripts, and documentation. Complete local installer packages, Apple firmware, signing tickets, device calibration, and original backups stay in local `saved/` directories and are excluded from Git.
+This repository contains source code, build scripts, and documentation. The Git source tree excludes firmware and private device inputs. The separate full release asset includes the verified owner device's firmware, signing material, and calibration; original backups remain local.
+
+## Download the complete installer
+
+[Download the full English installer ZIP](https://github.com/Peterdobby/touch4-idroid/releases/tag/v0.2.4-full-en). Extract it and run `bash start.sh`. It includes Android, boot images, the 5.1.1 profile, and macOS host tools. **This release is bound to the verified owner device and is not a universal installer.** It contains that device's identifier, calibration and signing material.
+
+The repository's **Code > Download ZIP** contains source files only.
 
 ## Verified configurations
 
