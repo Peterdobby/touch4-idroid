@@ -1,0 +1,12 @@
+#!/bin/sh
+# Run by linux-n81's menu at boot (installed as /bin/start-ui).
+exec >/tmp/shell.log 2>&1
+export PATH=/bin TZ='<-03>3'
+# the touch driver and the button service come up beside us
+i=0
+while [ $i -lt 30 ]; do
+	grep -q multitouch /proc/bus/input/devices && grep -q n81-buttons /proc/bus/input/devices && break
+	sleep 1
+	i=$((i + 1))
+done
+exec /bin/phone
