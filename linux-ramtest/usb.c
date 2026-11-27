@@ -110,7 +110,7 @@ int main(int argc,char **argv)
     puts("OpeniBoot USB 0525:1280 opened.");
     command("version\n");
     if(!receive_until("ACM: Done: version.",5) || !version_seen)return 3;
-    if(!upload(argv[2],0x42000000,8*1024*1024) ||
+    if(!upload(argv[2],0x42000000,12*1024*1024) ||
        !upload(argv[3],0x43000000,1024*1024) ||
        !upload(argv[4],0x44000000,65536))return 3;
     command("jump 0x684\n");
