@@ -1,0 +1,13 @@
+--- a/include/linux/serial_s3c.h	2026-11-27 14:19:17.242708701 +0100
++++ b/include/linux/serial_s3c.h	2026-11-27 14:19:17.242800363 +0100
+@@ -261,7 +261,9 @@
+ #define APPLE_S5L_UCON_MASK		(APPLE_S5L_UCON_RXTO_ENA_MSK | \
+ 					 APPLE_S5L_UCON_RXTO_LEGACY_ENA_MSK | \
+ 					 APPLE_S5L_UCON_RXTHRESH_ENA_MSK | \
+-					 APPLE_S5L_UCON_TXTHRESH_ENA_MSK)
++					 APPLE_S5L_UCON_TXTHRESH_ENA_MSK | \
++					 /* S5L8930 clock select, set by iBoot */ \
++					 BIT(10))
+ 
+ #define APPLE_S5L_UTRSTAT_RXTO_LEGACY	BIT(3)
+ #define APPLE_S5L_UTRSTAT_RXTHRESH	BIT(4)

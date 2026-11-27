@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * N81AP - Apple iPod touch (4th generation), RAM boot from openiBoot.
+ * Derived from s5l8930-apple-n90.dts (Copyright (c) 2018 Joey Hewitt).
+ */
+/dts-v1/;
+#include "s5l8930.dtsi"
+
+/ {
+	model = "Apple iPod touch 4";
+	compatible = "apple,n81", "samsung,s5l8930";
+	chassis-type = "handset";
+
+	chosen {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* Left running by openiBoot c5cee8c; not page aligned. */
+		framebuffer@8104580 {
+			compatible = "simple-framebuffer";
+			reg = <0x08104580 (640 * 960 * 4)>;
+			width = <640>;
+			height = <960>;
+			stride = <(640 * 4)>;
+			format = "x8r8g8b8";
+		};
+	};
+
+	soc {
+		gpio: gpio@bfa00000 {
+			compatible = "apple,s5l8930-gpio", "apple,pinctrl";
+			reg = <0xbfa00000 0x1000>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			apple,npins = <176>;
+
+			i2c_pins: i2c-gpio-pins {
+				pinmux = <75 76>;
+			};
+		};
+	};
+
+	/* PMU bus, used by the userspace touch driver through /dev/i2c-0. */
+	i2c-gpio {
+		compatible = "i2c-gpio";
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_pins>;
+		sda-gpios = <&gpio 75 0>;
+		scl-gpios = <&gpio 76 0>;
+		i2c-gpio,delay-us = <5>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0 0x10000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		fbmem@8104000 {
+			reg = <0x08104000 0x259000>;
+			no-map;
+		};
+	};
+};
+
+/* Bluetooth (BCM4329) is on UART1; pins and clock gate are left as iBoot set them. */
+/ {
+	aliases {
+		serial0 = &uart0;
+		serial1 = &uart1;
+	};
+
+	soc {
+		uart1: serial@82600000 {
+			compatible = "apple,s5l-uart";
+			reg = <0x82600000 0x1000>;
+			reg-io-width = <4>;
+			interrupt-parent = <&vic0>;
+			interrupts = <0x17>;
+			/* the driver computes the baud rate from clk_uart_baud0 */
+			clocks = <&osc24M>, <&osc24M>;
+			clock-names = "uart", "clk_uart_baud0";
+		};
+	};
+};

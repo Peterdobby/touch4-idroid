@@ -1,0 +1,59 @@
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil.c
+@@ -299,6 +299,28 @@
+ 	return iolen;
+ }
+ 
++/*
++ * "minioctl" firmware (Apple's 4.221.54.26 for the iPod touch 4) lacks some
++ * iovar names but keeps the classic numbered ioctls for the same settings.
++ */
++static const struct { const char *name; u32 get, set; } brcmf_legacy_int[] = {
++	{ "wpa_auth", 164, 165 },
++	{ "wsec", 133, 134 },
++	{ "auth", 21, 22 },
++};
++
++static int brcmf_legacy_int_find(struct brcmf_if *ifp, const char *name, u32 len)
++{
++	int i;
++
++	if (ifp->bsscfgidx || len != sizeof(__le32))
++		return -1;
++	for (i = 0; i < ARRAY_SIZE(brcmf_legacy_int); i++)
++		if (!strcmp(name, brcmf_legacy_int[i].name))
++			return i;
++	return -1;
++}
++
+ s32
+ brcmf_fil_bsscfg_data_set(struct brcmf_if *ifp, const char *name,
+ 			  void *data, u32 len)
+@@ -325,6 +347,13 @@
+ 	}
+ 
+ 	mutex_unlock(&drvr->proto_block);
++	if (err) {
++		int i = brcmf_legacy_int_find(ifp, name, len);
++
++		if (i >= 0)
++			err = brcmf_fil_cmd_data_set(ifp, brcmf_legacy_int[i].set,
++						     data, len);
++	}
+ 	return err;
+ }
+ BRCMF_EXPORT_SYMBOL_GPL(brcmf_fil_bsscfg_data_set);
+@@ -356,6 +385,13 @@
+ 			   min_t(uint, len, MAX_HEX_DUMP_LEN), "data\n");
+ 
+ 	mutex_unlock(&drvr->proto_block);
++	if (err) {
++		int i = brcmf_legacy_int_find(ifp, name, len);
++
++		if (i >= 0)
++			err = brcmf_fil_cmd_data_get(ifp, brcmf_legacy_int[i].get,
++						     data, len);
++	}
+ 	return err;
+ }
+ BRCMF_EXPORT_SYMBOL_GPL(brcmf_fil_bsscfg_data_get);

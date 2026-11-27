@@ -74,3 +74,8 @@ kernelcache*
 /tools/e2fsprogs-1.47.1
 /tools/host-include
 /tools/libusb-phase1
+
+# linux-n81 and phone-ui build outputs
+/linux-n81/work/
+/phone-ui/third_party/
+/phone-ui/build/

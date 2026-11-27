@@ -1,0 +1,107 @@
+diff -ruN a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
+@@ -3423,8 +3423,13 @@
+ 	int i;
+ 
+ 	bss_list = (struct brcmf_scan_results *)cfg->escan_info.escan_buf;
++	/*
++	 * Version 108 (the iPhone 4's BCM4329 firmware) only lacks the
++	 * trailing SNR; records are walked by length and IEs by ie_offset.
++	 */
+ 	if (bss_list->count != 0 &&
+-	    bss_list->version != BRCMF_BSS_INFO_VERSION) {
++	    bss_list->version != BRCMF_BSS_INFO_VERSION &&
++	    bss_list->version != 108) {
+ 		bphy_err(drvr, "Version %d != WL_BSS_INFO_VERSION\n",
+ 			 bss_list->version);
+ 		return -EOPNOTSUPP;
+@@ -7096,6 +7101,12 @@
+ 					channel->flags |=
+ 						IEEE80211_CHAN_NO_IR;
+ 			}
++			/*
++			 * Older firmware, such as the iPhone 4's BCM4329
++			 * 4.221.54.30, has no per_chan_info. The channel
++			 * stays usable; don't fail the band over it.
++			 */
++			err = 0;
+ 		}
+ 	}
+ 
+@@ -7793,10 +7804,11 @@
+ 
+ 	brcmf_configure_arp_nd_offload(ifp, true);
+ 
++	/* Frame bursting is an optimisation; the iPhone 4's firmware lacks it. */
+ 	err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_SET_FAKEFRAG, 1);
+ 	if (err) {
+-		bphy_err(drvr, "failed to set frameburst mode\n");
+-		goto default_conf_out;
++		bphy_info_once(drvr, "frameburst mode not available (%d)\n", err);
++		err = 0;
+ 	}
+ 
+ 	cfg->dongle_up = true;
+diff -ruN a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/common.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/common.c
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/common.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/common.c
+@@ -433,23 +433,22 @@
+ 		goto done;
+ 	}
+ 
+-	/* Setup default scan channel time */
++	/*
++	 * Default scan dwell times. Apple's BCM4329 firmware (4.221.54.30)
++	 * rejects these; its own defaults scan fine, so carry on.
++	 */
+ 	err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_SET_SCAN_CHANNEL_TIME,
+ 				    BRCMF_DEFAULT_SCAN_CHANNEL_TIME);
+-	if (err) {
+-		bphy_err(drvr, "BRCMF_C_SET_SCAN_CHANNEL_TIME error (%d)\n",
+-			 err);
+-		goto done;
+-	}
++	if (err)
++		bphy_info_once(drvr, "BRCMF_C_SET_SCAN_CHANNEL_TIME error (%d), using the firmware's\n",
++			       err);
+ 
+-	/* Setup default scan unassoc time */
+ 	err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_SET_SCAN_UNASSOC_TIME,
+ 				    BRCMF_DEFAULT_SCAN_UNASSOC_TIME);
+-	if (err) {
+-		bphy_err(drvr, "BRCMF_C_SET_SCAN_UNASSOC_TIME error (%d)\n",
+-			 err);
+-		goto done;
+-	}
++	if (err)
++		bphy_info_once(drvr, "BRCMF_C_SET_SCAN_UNASSOC_TIME error (%d), using the firmware's\n",
++			       err);
++	err = 0;
+ 
+ 	/* Enable tx beamforming, errors can be ignored (not supported) */
+ 	(void)brcmf_fil_iovar_int_set(ifp, "txbf", 1);
+diff -ruN a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.c
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.c
+@@ -273,9 +273,17 @@
+ 			  event->emsg.ifidx, event->emsg.bsscfgidx,
+ 			  event->emsg.addr);
+ 		if (event->emsg.bsscfgidx >= BRCMF_MAX_IFS) {
+-			bphy_err(drvr, "invalid bsscfg index: %u\n",
+-				 event->emsg.bsscfgidx);
+-			goto event_free;
++			/*
++			 * The iPhone 4's BCM4329 firmware (4.221.54.30) sends
++			 * the join's SET_SSID and PSK_SUP events with bsscfg
++			 * index 255. It runs a single interface; dropping them
++			 * left every connect waiting forever.
++			 */
++			wiphy_info(drvr->wiphy, "event %u status %u reason %u: bsscfg %u, using 0\n",
++				   event->code, be32_to_cpu(event->emsg.status),
++				   be32_to_cpu(event->emsg.reason),
++				   event->emsg.bsscfgidx);
++			event->emsg.bsscfgidx = 0;
+ 		}
+ 
+ 		/* convert event message */

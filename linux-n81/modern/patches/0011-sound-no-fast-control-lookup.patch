@@ -1,0 +1,11 @@
+--- a/sound/core/Kconfig	2026-11-27 13:40:08.620718807 +0100
++++ b/sound/core/Kconfig	2026-11-27 13:40:08.636508287 +0100
+@@ -180,7 +180,7 @@
+ 
+ config SND_CTL_FAST_LOOKUP
+ 	bool "Fast lookup of control elements" if EXPERT
+-	default y
++	default n
+ 	select XARRAY_MULTI
+ 	help
+ 	  This option enables the faster lookup of control elements.

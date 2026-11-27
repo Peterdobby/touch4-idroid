@@ -1,0 +1,288 @@
+diff -ruN a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.c
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.c
+@@ -241,6 +241,11 @@
+ 	return err;
+ }
+ 
++/* N90 bring-up: log every backplane register access. */
++static bool n90_trace;
++module_param(n90_trace, bool, 0644);
++MODULE_PARM_DESC(n90_trace, "Log backplane register reads and writes");
++
+ u32 brcmf_sdiod_readl(struct brcmf_sdio_dev *sdiodev, u32 addr, int *ret)
+ {
+ 	u32 data = 0;
+@@ -256,6 +261,9 @@
+ 	data = sdio_readl(sdiodev->func1, addr, &retval);
+ 
+ out:
++	if (n90_trace)
++		pr_info("n90: readl %08x = %08x (%d)\n",
++			sdiodev->sbwad | (addr & SBSDIO_SB_OFT_ADDR_MASK), data, retval);
+ 	if (ret)
+ 		*ret = retval;
+ 
+@@ -277,6 +285,9 @@
+ 	sdio_writel(sdiodev->func1, data, addr, &retval);
+ 
+ out:
++	if (n90_trace)
++		pr_info("n90: writel %08x = %08x (%d)\n",
++			sdiodev->sbwad | (addr & SBSDIO_SB_OFT_ADDR_MASK), data, retval);
+ 	if (ret)
+ 		*ret = retval;
+ }
+diff -ruN a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil.c
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fwil.c
+@@ -19,6 +19,11 @@
+ #include "fwil.h"
+ #include "proto.h"
+ 
++/* N90 bring-up: name each command the firmware rejects. */
++static bool n90_fwerr;
++module_param(n90_fwerr, bool, 0644);
++MODULE_PARM_DESC(n90_fwerr, "Log every command the firmware rejects");
++
+ 
+ #define MAX_HEX_DUMP_LEN	64
+ 
+@@ -118,6 +123,10 @@
+ 	} else if (fwerr < 0) {
+ 		brcmf_dbg(FIL, "Firmware error: %s (%d)\n",
+ 			  brcmf_fil_get_errstr((u32)(-fwerr)), fwerr);
++		if (n90_fwerr)
++			pr_info("brcmfmac n90: %s %u: firmware error %s (%d)\n",
++				set ? "set" : "get", cmd,
++				brcmf_fil_get_errstr((u32)(-fwerr)), fwerr);
+ 		err = -EBADE;
+ 	}
+ 	if (ifp->fwil_fwerr)
+diff -ruN a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/sdio.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/sdio.c
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/sdio.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/sdio.c
+@@ -113,6 +113,17 @@
+ #include "debug.h"
+ #include "tracepoint.h"
+ 
++/*
++ * iPhone 4 (N90) bring-up diagnostics: dump the PMU before the clock is
++ * dropped, probe SOCRAM before the download, and when the firmware does not
++ * come up, print its shared area, trap and console log.
++ */
++static bool n90_debug;
++module_param(n90_debug, bool, 0644);
++MODULE_PARM_DESC(n90_debug, "Print iPhone 4 bring-up diagnostics");
++struct brcmf_sdio;
++static void brcmf_sdio_n90_status(struct brcmf_sdio *bus);
++
+ #define TXQLEN		2048	/* bulk tx queue length */
+ #define TXHI		(TXQLEN - 256)	/* turn on flow control above TXHI */
+ #define TXLOW		(TXHI - 256)	/* turn off flow control below TXLOW */
+@@ -3273,6 +3284,8 @@
+ 			  rxlen, msglen);
+ 	} else if (timeleft == 0) {
+ 		brcmf_err("resumed on timeout\n");
++		if (n90_debug)
++			brcmf_sdio_n90_status(bus);
+ 		brcmf_sdio_checkdied(bus);
+ 	} else if (pending) {
+ 		brcmf_dbg(CTL, "cancelled\n");
+@@ -3382,6 +3395,166 @@
+ 	return err;
+ }
+ 
++/* PMU state while ALP is still forced: is the ILP clock running? */
++static void brcmf_sdio_n90_pmudump(struct brcmf_sdio *bus)
++{
++	static const u16 regs[] = { 0x28, 0x2c, 0x600, 0x604, 0x608, 0x60c,
++				    0x610, 0x614, 0x618, 0x61c, 0x620, 0x624 };
++	struct brcmf_sdio_dev *sdiodev = bus->sdiodev;
++	u32 base = brcmf_chip_get_pmu(bus->ci)->base;
++	u32 t0, t1;
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(regs); i++)
++		brcmf_err("n90: pmu %#x = %#010x\n", regs[i],
++			  brcmf_sdiod_readl(sdiodev, base + regs[i], NULL));
++	t0 = brcmf_sdiod_readl(sdiodev, base + 0x614, NULL);
++	msleep(100);
++	t1 = brcmf_sdiod_readl(sdiodev, base + 0x614, NULL);
++	brcmf_err("n90: pmutimer %#x -> %#x in 100 ms (ILP ~32 kHz gives ~3277)\n",
++		  t0, t1);
++}
++
++static void brcmf_sdio_n90_ramprobe(struct brcmf_sdio *bus)
++{
++	static const u16 cores[] = { BCMA_CORE_ARM_CM3, BCMA_CORE_80211,
++				     BCMA_CORE_INTERNAL_MEM };
++	static const uint sizes[] = { 4, 64, 128 };
++	struct brcmf_sdio_dev *sdiodev = bus->sdiodev;
++	u8 out[128], in[128];
++	int i, n, err;
++	u8 clk;
++
++	clk = brcmf_sdiod_readb(sdiodev, SBSDIO_FUNC1_CHIPCLKCSR, &err);
++	brcmf_err("n90: rambase %#x ramsize %#x clkcsr %#x (%d)\n",
++		  bus->ci->rambase, bus->ci->ramsize, clk, err);
++	for (i = 0; i < ARRAY_SIZE(cores); i++) {
++		struct brcmf_core *core = brcmf_chip_get_core(bus->ci, cores[i]);
++
++		if (!core)
++			continue;
++		brcmf_err("n90: core %#x rev %u at %#x up %d tmslow %#x tmshigh %#x\n",
++			  core->id, core->rev, core->base,
++			  brcmf_chip_iscoreup(core),
++			  brcmf_sdiod_readl(sdiodev, core->base + 0xf98, NULL),
++			  brcmf_sdiod_readl(sdiodev, core->base + 0xf9c, NULL));
++	}
++	memset(in, 0, sizeof(in));
++	err = brcmf_sdiod_ramrw(sdiodev, false, bus->ci->rambase, in, 4);
++	brcmf_err("n90: read 4 at rambase: %d %*ph\n", err, 4, in);
++	if (err)
++		return;
++	for (i = 0; i < ARRAY_SIZE(sizes); i++) {
++		u32 at = bus->ci->rambase + 0x100 * (i + 1);
++
++		for (n = 0; n < sizes[i]; n++)
++			out[n] = n * 7 + i + 1;
++		err = brcmf_sdiod_ramrw(sdiodev, true, at, out, sizes[i]);
++		brcmf_err("n90: write %u at %#x: %d\n", sizes[i], at, err);
++		if (err)
++			return;
++		memset(in, 0, sizeof(in));
++		err = brcmf_sdiod_ramrw(sdiodev, false, at, in, sizes[i]);
++		brcmf_err("n90: read %u: %d, %s, %*ph\n", sizes[i], err,
++			  memcmp(in, out, sizes[i]) ? "differs" : "matches",
++			  16, in);
++		if (err)
++			return;
++	}
++}
++
++/*
++ * Why the firmware did not come up: the word it replaces at the end of RAM
++ * with a pointer to its shared area, any trap or assert there, and the tail
++ * of its console log. Works without CONFIG_BRCMDBG.
++ */
++static void brcmf_sdio_n90_postmortem(struct brcmf_sdio *bus)
++{
++	struct brcmf_sdio_dev *sdiodev = bus->sdiodev;
++	u32 end = bus->ci->rambase + bus->ci->ramsize;
++	u32 shared, console, buf, size, idx;
++	__le32 w[18];
++	char *text, *line, *next;
++	int err, i;
++
++	err = brcmf_sdiod_ramrw(sdiodev, false, end - 4, (u8 *)w, 4);
++	shared = le32_to_cpu(w[0]);
++	pr_info("brcmfmac n90: last RAM word %#x (%d)\n", shared, err);
++	if (err || shared < bus->ci->rambase || shared >= end - 64) {
++		pr_info("brcmfmac n90: no shared area; the firmware did not get that far\n");
++		return;
++	}
++	err = brcmf_sdiod_ramrw(sdiodev, false, shared, (u8 *)w, 64);
++	if (err)
++		return;
++	pr_info("brcmfmac n90: shared flags %#x trap %#x assert %#x in %#x line %u console %#x\n",
++		le32_to_cpu(w[0]), le32_to_cpu(w[1]), le32_to_cpu(w[2]),
++		le32_to_cpu(w[3]), le32_to_cpu(w[4]), le32_to_cpu(w[5]));
++	if (le32_to_cpu(w[1]) && !brcmf_sdiod_ramrw(sdiodev, false, le32_to_cpu(w[1]),
++						    (u8 *)w + 0, 72))
++		pr_info("brcmfmac n90: trap type %#x epc %#x cpsr %#x spsr %#x r0 %#x r1 %#x r2 %#x r3 %#x r4 %#x r5 %#x r6 %#x r7 %#x\n",
++			le32_to_cpu(w[0]), le32_to_cpu(w[1]), le32_to_cpu(w[2]),
++			le32_to_cpu(w[3]), le32_to_cpu(w[4]), le32_to_cpu(w[5]),
++			le32_to_cpu(w[6]), le32_to_cpu(w[7]), le32_to_cpu(w[8]),
++			le32_to_cpu(w[9]), le32_to_cpu(w[10]), le32_to_cpu(w[11]));
++	err = brcmf_sdiod_ramrw(sdiodev, false, shared, (u8 *)w, 64);
++	console = err ? 0 : le32_to_cpu(w[5]);
++	if (!console || brcmf_sdiod_ramrw(sdiodev, false, console + 8, (u8 *)w, 12))
++		return;
++	buf = le32_to_cpu(w[0]);
++	size = le32_to_cpu(w[1]);
++	idx = le32_to_cpu(w[2]);
++	pr_info("brcmfmac n90: console at %#x, %u bytes, write index %u\n", buf, size, idx);
++	if (!size || size > 16384 || idx >= size)
++		return;
++	text = kzalloc(2 * size + 1, GFP_KERNEL);
++	if (!text)
++		return;
++	/* Oldest first: from the write index to the end, then the start. */
++	if (!brcmf_sdiod_ramrw(sdiodev, false, buf, (u8 *)text + size, size)) {
++		memcpy(text, text + size + idx, size - idx);
++		memcpy(text + size - idx, text + size, idx);
++		text[size] = 0;
++		/* The unwritten part of a young log is zeros. */
++		for (i = 0; i < size; i++)
++			if (text[i] != '\n' && (text[i] < 32 || text[i] > 126))
++				text[i] = text[i] ? ' ' : '\n';
++		for (line = text; line && *line; line = next) {
++			next = strchr(line, '\n');
++			if (next)
++				*next++ = 0;
++			if (*line)
++				pr_info("brcmfmac n90 console: %s\n", line);
++		}
++	}
++	kfree(text);
++}
++
++/* Both ends of the control channel when the dongle stops answering. */
++static void brcmf_sdio_n90_status(struct brcmf_sdio *bus)
++{
++	struct brcmf_sdio_dev *sdiodev = bus->sdiodev;
++	struct brcmf_sdio_count *c = &bus->sdcnt;
++	u32 base = bus->sdio_core->base;
++	u8 iorx, intx, clk;
++	u32 intstatus, mask;
++
++	sdio_claim_host(sdiodev->func1);
++	iorx = brcmf_sdiod_func0_rb(sdiodev, SDIO_CCCR_IORx, NULL);
++	intx = brcmf_sdiod_func0_rb(sdiodev, SDIO_CCCR_INTx, NULL);
++	clk = brcmf_sdiod_readb(sdiodev, SBSDIO_FUNC1_CHIPCLKCSR, NULL);
++	intstatus = brcmf_sdiod_readl(sdiodev, base + SD_REG(intstatus), NULL);
++	mask = brcmf_sdiod_readl(sdiodev, base + SD_REG(hostintmask), NULL);
++	sdio_release_host(sdiodev->func1);
++	pr_info("brcmfmac n90: IORx %#x INTx %#x clkcsr %#x intstatus %#x hostintmask %#x pending %#x\n",
++		iorx, intx, clk, intstatus, mask, atomic_read(&bus->intstatus));
++	pr_info("brcmfmac n90: intr %d poll %d interrupts %u polls %u hdrs %u data %u tx %u ctl tx %lu errs %lu rx %lu errs %lu hdrfail %u badhdr %u\n",
++		bus->intr, bus->poll, c->intrcount, c->pollcnt, c->f2rxhdrs,
++		c->f2rxdata, c->f2txdata, c->tx_ctlpkts, c->tx_ctlerrs,
++		c->rx_ctlpkts, c->rx_ctlerrs, c->rx_hdrfail, c->rx_badhdr);
++	brcmf_sdio_n90_postmortem(bus);
++}
++
+ static int brcmf_sdio_download_firmware(struct brcmf_sdio *bus,
+ 					const struct firmware *fw,
+ 					void *nvram, u32 nvlen)
+@@ -3391,6 +3564,8 @@
+ 
+ 	sdio_claim_host(bus->sdiodev->func1);
+ 	brcmf_sdio_clkctl(bus, CLK_AVAIL, false);
++	if (n90_debug)
++		brcmf_sdio_n90_ramprobe(bus);
+ 
+ 	rstvec = get_unaligned_le32(fw->data);
+ 	brcmf_dbg(SDIO, "firmware rstvec: %x\n", rstvec);
+@@ -4268,6 +4443,10 @@
+ 	err = sdio_enable_func(sdiod->func2);
+ 
+ 	brcmf_dbg(INFO, "enable F2: err=%d\n", err);
++	if (err && n90_debug) {
++		pr_info("brcmfmac n90: F2 not ready (%d)\n", err);
++		brcmf_sdio_n90_postmortem(bus);
++	}
+ 
+ 	/* If F2 successfully enabled, set core and enable interrupts */
+ 	if (!err) {
+@@ -4522,6 +4701,9 @@
+ 
+ 	bus->rxflow = false;
+ 
++	if (n90_debug)
++		brcmf_sdio_n90_pmudump(bus);
++
+ 	/* Done with backplane-dependent accesses, can drop clock... */
+ 	brcmf_sdiod_writeb(bus->sdiodev, SBSDIO_FUNC1_CHIPCLKCSR, 0, NULL);
+ 

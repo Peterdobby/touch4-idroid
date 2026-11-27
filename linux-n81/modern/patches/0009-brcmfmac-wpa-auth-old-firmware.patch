@@ -1,0 +1,13 @@
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
+@@ -1978,6 +1978,10 @@
+ 	}
+ 	brcmf_dbg(CONN, "setting wpa_auth to 0x%0x\n", val);
+ 	err = brcmf_fil_bsscfg_int_set(ifp, "wpa_auth", val);
++	/* Old firmware (4.221.54.26) takes a single suite, not PSK|802.1X. */
++	if (err && val == (WPA2_AUTH_PSK | WPA2_AUTH_UNSPECIFIED))
++		err = brcmf_fil_bsscfg_int_set(ifp, "wpa_auth",
++					       WPA2_AUTH_PSK);
+ 	if (err) {
+ 		bphy_err(drvr, "set wpa_auth failed (%d)\n", err);
+ 		return err;

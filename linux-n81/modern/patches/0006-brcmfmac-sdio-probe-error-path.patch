@@ -1,0 +1,12 @@
+diff -ruN a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.c
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bcmsdh.c
+@@ -954,6 +954,8 @@
+ 	sdiodev->bus = brcmf_sdio_probe(sdiodev);
+ 	if (IS_ERR(sdiodev->bus)) {
+ 		ret = PTR_ERR(sdiodev->bus);
++		/* brcmf_sdio_probe() already freed it; don't remove it again. */
++		sdiodev->bus = NULL;
+ 		goto out;
+ 	}
+ 	brcmf_sdiod_host_fixup(sdiodev->func2->card->host);

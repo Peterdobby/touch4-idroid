@@ -1,0 +1,343 @@
+diff -ruN a/drivers/mmc/host/Kconfig b/drivers/mmc/host/Kconfig
+--- a/drivers/mmc/host/Kconfig
++++ b/drivers/mmc/host/Kconfig
+@@ -224,6 +224,13 @@
+ 
+ 	  If unsure, say N.
+ 
++config MMC_SDHCI_S5L8930
++	tristate "SDHCI support for the Apple S5L8930 (A4) SDIO host"
++	depends on MMC_SDHCI_PLTFM
++	depends on ARCH_S5L8930 || COMPILE_TEST
++	help
++	  The SDIO host of the Apple A4, which carries the iPhone 4 Wi-Fi.
++
+ config MMC_SDHCI_OF_HLWD
+ 	tristate "SDHCI OF support for the Nintendo Wii SDHCI controllers"
+ 	depends on MMC_SDHCI_PLTFM
+diff -ruN a/drivers/mmc/host/Makefile b/drivers/mmc/host/Makefile
+--- a/drivers/mmc/host/Makefile
++++ b/drivers/mmc/host/Makefile
+@@ -87,6 +87,7 @@
+ obj-$(CONFIG_MMC_SDHCI_OF_ASPEED)	+= sdhci-of-aspeed.o
+ obj-$(CONFIG_MMC_SDHCI_OF_AT91)		+= sdhci-of-at91.o
+ obj-$(CONFIG_MMC_SDHCI_OF_ESDHC)	+= sdhci-of-esdhc.o
++obj-$(CONFIG_MMC_SDHCI_S5L8930)	+= sdhci-s5l8930.o
+ obj-$(CONFIG_MMC_SDHCI_OF_HLWD)		+= sdhci-of-hlwd.o
+ obj-$(CONFIG_MMC_SDHCI_OF_DWCMSHC)	+= sdhci-of-dwcmshc.o
+ obj-$(CONFIG_MMC_SDHCI_OF_K1)		+= sdhci-of-k1.o
+diff -ruN a/drivers/mmc/host/sdhci-s5l8930.c b/drivers/mmc/host/sdhci-s5l8930.c
+--- a/drivers/mmc/host/sdhci-s5l8930.c
++++ b/drivers/mmc/host/sdhci-s5l8930.c
+@@ -0,0 +1,311 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * SDHCI glue for the Apple S5L8930 (A4) SDIO host, which carries the iPhone 4
++ * BCM4329 Wi-Fi.
++ *
++ * The block at 0x80000000 is a standard SDHCI 3.00 controller (capabilities
++ * 0x69a530b0 on the phone: 48 MHz base and timeout clocks, 3.3 V, high speed,
++ * no SDMA or ADMA, so transfers run in PIO). Its clock gate is PMGR gate 0x24
++ * (openiBoot plat-a4/sdio.h); reads return zeros while the gate is off. The
++ * optional second "reg" entry is that gate register, switched on at probe.
++ */
++#include <linux/delay.h>
++#include <linux/io.h>
++#include <linux/iopoll.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/of_irq.h>
++#include <linux/mmc/card.h>
++#include <linux/mmc/host.h>
++#include <linux/platform_device.h>
++#include "sdhci-pltfm.h"
++
++/*
++ * Bring-up without a device tree: the BCM4329's WL_REG_ON is GPIO 6 (Apple
++ * "function-device_reset"). openiBoot powers the bus first and only then
++ * releases the chip from reset (low 12 ms, high, wait 150 ms); a chip released
++ * earlier never answers CMD5. With a device tree this is mmc-pwrseq-simple.
++ */
++static void __iomem *wlan_reset;
++
++static unsigned int max_mhz = 25;
++module_param(max_mhz, uint, 0444);
++MODULE_PARM_DESC(max_mhz, "Highest SDIO clock in MHz (default 25)");
++
++/*
++ * The card interrupt goes through the host. On the phone (22 October) an idle
++ * BCM4329 raised one interrupt in 10 s and scans completed on it. card_irq=0
++ * makes the MMC core poll the card's pending interrupts every 10 ms instead:
++ * about 100 CMD52 a second, a steady drain on the battery.
++ */
++static bool card_irq = true;
++module_param(card_irq, bool, 0444);
++MODULE_PARM_DESC(card_irq, "Use the host's SDIO card interrupt (default) instead of polling");
++
++/* Bring-up experiments with the data path. */
++static bool single_block;
++module_param(single_block, bool, 0444);
++MODULE_PARM_DESC(single_block, "One block per transfer (SDHCI_QUIRK_NO_MULTIBLOCK)");
++static bool max_timeout;
++module_param(max_timeout, bool, 0444);
++MODULE_PARM_DESC(max_timeout, "Use the longest data timeout (SDHCI_QUIRK_BROKEN_TIMEOUT_VAL)");
++static bool trace;
++module_param(trace, bool, 0644);
++MODULE_PARM_DESC(trace, "Log every interrupt during a data transfer");
++
++struct s5l8930_sdhci {
++	unsigned int stale;	/* words a failed PIO read left in the buffer */
++};
++
++static u32 s5l8930_sdhci_irq(struct sdhci_host *host, u32 intmask)
++{
++	struct s5l8930_sdhci *priv = sdhci_pltfm_priv(sdhci_priv(host));
++
++	if (host->data && (host->data->flags & MMC_DATA_READ) &&
++	    !(host->flags & SDHCI_REQ_USE_DMA) &&
++	    (intmask & (SDHCI_INT_DATA_CRC | SDHCI_INT_DATA_END_BIT)))
++		priv->stale += DIV_ROUND_UP(host->data->blksz, 4);
++	if (trace && (host->data || (intmask & ~SDHCI_INT_RESPONSE)))
++		pr_info("%s: irq %08x present %08x blocks %u blkcnt %u\n",
++			mmc_hostname(host->mmc), intmask,
++			sdhci_readl(host, SDHCI_PRESENT_STATE), host->blocks,
++			sdhci_readw(host, SDHCI_BLOCK_COUNT));
++	return intmask;
++}
++
++/*
++ * A PIO read that fails its CRC still leaves its block in the buffer, and
++ * the SDHCI data reset does not flush it, so every later read would hand
++ * back the block before. The BCM4329 answers reads of chipcommon registers
++ * it lacks, such as capabilities_ext, with a bad CRC; brcmfmac then read
++ * pmucapabilities as pmucontrol and wrote it back, which stopped the chip's
++ * backplane. Read the leftover out after the reset.
++ */
++static void s5l8930_sdhci_reset(struct sdhci_host *host, u8 mask)
++{
++	struct s5l8930_sdhci *priv = sdhci_pltfm_priv(sdhci_priv(host));
++
++	sdhci_reset(host, mask);
++	if (mask & (SDHCI_RESET_DATA | SDHCI_RESET_ALL))
++		for (; priv->stale; priv->stale--)
++			sdhci_readl(host, SDHCI_BUFFER);
++}
++
++static void s5l8930_sdhci_set_power(struct sdhci_host *host, unsigned char mode,
++				    unsigned short vdd)
++{
++	sdhci_set_power(host, mode, vdd);
++	if (!wlan_reset)
++		return;
++	if (mode == MMC_POWER_OFF) {
++		writel(0x212, wlan_reset);
++	} else if (mode == MMC_POWER_UP) {
++		writel(0x212, wlan_reset);
++		mdelay(12);
++		writel(0x213, wlan_reset);
++		mdelay(150);
++	}
++}
++
++/*
++ * The iPhone's BCM4329 CIS has no function 0 FUNCE tuple, so cis.max_dtr is 0
++ * and, without high speed, the core asks for a 0 Hz clock on a powered card
++ * right after reading the CIS. Run it at the host's maximum instead.
++ */
++static void s5l8930_sdhci_set_clock(struct sdhci_host *host, unsigned int clock)
++{
++	if (!clock && host->mmc->ios.power_mode == MMC_POWER_ON)
++		clock = host->mmc->f_max;
++	sdhci_set_clock(host, clock);
++}
++
++/*
++ * The CIS has no function FUNCE tuples either, so every function's
++ * max_blksize stays 0 and byte-mode CMD53 transfers come out 0 bytes long
++ * (WARN in mmc_io_rw_extended, then reads of 0xffffffff). Size byte mode by
++ * the block size the function driver sets instead.
++ */
++static void s5l8930_sdhci_init_card(struct mmc_host *mmc, struct mmc_card *card)
++{
++	card->quirks |= MMC_QUIRK_BLKSZ_FOR_BYTE_MODE;
++}
++
++static const struct sdhci_ops s5l8930_sdhci_ops = {
++	.set_clock = s5l8930_sdhci_set_clock,
++	.set_power = s5l8930_sdhci_set_power,
++	.set_bus_width = sdhci_set_bus_width,
++	.reset = s5l8930_sdhci_reset,
++	.set_uhs_signaling = sdhci_set_uhs_signaling,
++	.irq = s5l8930_sdhci_irq,
++};
++
++static const struct sdhci_pltfm_data s5l8930_sdhci_pdata = {
++	.ops = &s5l8930_sdhci_ops,
++	.quirks2 = SDHCI_QUIRK2_NO_1_8_V,
++};
++
++static int s5l8930_sdhci_gate_on(struct platform_device *pdev)
++{
++	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
++	void __iomem *gate;
++	u32 val;
++	int ret;
++
++	if (!res)
++		return 0;
++	gate = devm_ioremap(&pdev->dev, res->start, resource_size(res));
++	if (!gate)
++		return -ENOMEM;
++	writel(readl(gate) | 0xf, gate);
++	/* The status nibble (bits 4-7) follows the request once the gate opens. */
++	ret = readl_poll_timeout(gate, val, ((val >> 4) & 0xf) == (val & 0xf),
++				 10, 10000);
++	if (ret) {
++		dev_err(&pdev->dev, "clock gate did not open: %#x\n", val);
++		return ret;
++	}
++	/*
++	 * Pulse the block's own reset, bit 31 of its gate (openiBoot
++	 * clock_gate_reset). After a failed transfer the SDHCI software reset
++	 * leaves this host handing back every PIO read one word late, until
++	 * the block is reset like this or the phone restarts.
++	 */
++	writel(readl(gate) | BIT(31), gate);
++	udelay(1);
++	writel(readl(gate) & ~BIT(31), gate);
++	return 0;
++}
++
++static int s5l8930_sdhci_probe(struct platform_device *pdev)
++{
++	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
++	int ret = s5l8930_sdhci_gate_on(pdev);
++
++	if (ret)
++		return ret;
++	struct sdhci_host *host;
++
++	if (res) {
++		wlan_reset = devm_ioremap(&pdev->dev, res->start, resource_size(res));
++		if (!wlan_reset)
++			return -ENOMEM;
++	}
++	host = sdhci_pltfm_init(pdev, &s5l8930_sdhci_pdata,
++				sizeof(struct s5l8930_sdhci));
++	if (IS_ERR(host))
++		return PTR_ERR(host);
++	ret = mmc_of_parse(host->mmc);
++	if (ret)
++		return ret;
++	if (!pdev->dev.of_node) {
++		/*
++		 * The soldered BCM4329: 4-bit, high speed. Its CIS gives no
++		 * maximum transfer rate, so without high speed the core would
++		 * set a 0 Hz clock after reading it.
++		 */
++		host->mmc->caps |= MMC_CAP_4_BIT_DATA | MMC_CAP_SD_HIGHSPEED |
++				   MMC_CAP_NONREMOVABLE;
++		host->mmc->f_max = 25000000;
++	}
++	if (max_mhz && (!host->mmc->f_max || host->mmc->f_max > max_mhz * 1000000))
++		host->mmc->f_max = max_mhz * 1000000;
++	host->mmc_host_ops.init_card = s5l8930_sdhci_init_card;
++	if (single_block)
++		host->quirks |= SDHCI_QUIRK_NO_MULTIBLOCK;
++	if (max_timeout)
++		host->quirks |= SDHCI_QUIRK_BROKEN_TIMEOUT_VAL;
++	ret = sdhci_setup_host(host);
++	if (ret)
++		return ret;
++	if (!card_irq) {
++		/*
++		 * Poll instead: without its own thread (sdhci's NOTHREAD)
++		 * the MMC core would never look at the card's interrupts.
++		 */
++		host->mmc->caps &= ~MMC_CAP_SDIO_IRQ;
++		host->mmc->caps2 &= ~MMC_CAP2_SDIO_IRQ_NOTHREAD;
++	}
++	ret = __sdhci_add_host(host);
++	if (ret)
++		sdhci_cleanup_host(host);
++	return ret;
++}
++
++static const struct of_device_id s5l8930_sdhci_of_match[] = {
++	{ .compatible = "apple,s5l8930-sdhci" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, s5l8930_sdhci_of_match);
++
++static struct platform_driver s5l8930_sdhci_driver = {
++	.driver = {
++		.name = "sdhci-s5l8930",
++		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
++		.of_match_table = s5l8930_sdhci_of_match,
++		.pm = &sdhci_pltfm_pmops,
++	},
++	.probe = s5l8930_sdhci_probe,
++	.remove = sdhci_pltfm_remove,
++};
++
++/*
++ * Bring-up only: with fixed=1 and no device tree node, register the host at
++ * its known address so the module can be tested without a new DTB.
++ */
++static bool fixed;
++module_param(fixed, bool, 0444);
++MODULE_PARM_DESC(fixed, "Register the host without a device tree node");
++
++static struct platform_device *fixed_pdev;
++
++static int __init s5l8930_sdhci_init(void)
++{
++	struct of_phandle_args irq_spec = { .args_count = 1, .args = { 6 } };
++	struct device_node *np;
++	int ret, irq;
++
++	ret = platform_driver_register(&s5l8930_sdhci_driver);
++	if (ret || !fixed || of_find_compatible_node(NULL, NULL, "apple,s5l8930-sdhci"))
++		return ret;
++
++	/* VIC1 (0xbf210000) line 6 is SoC interrupt 38. */
++	for_each_compatible_node(np, NULL, "arm,pl192-vic") {
++		struct resource r;
++
++		if (!of_address_to_resource(np, 0, &r) && r.start == 0xbf210000) {
++			irq_spec.np = np;
++			break;
++		}
++	}
++	if (!irq_spec.np)
++		return 0;
++	irq = irq_create_of_mapping(&irq_spec);
++	of_node_put(irq_spec.np);
++	if (irq > 0) {
++		struct resource res[] = {
++			DEFINE_RES_MEM(0x80000000, 0x1000),
++			DEFINE_RES_MEM(0xbf1010a0, 4),
++			DEFINE_RES_MEM(0xbfa00018, 4),
++			DEFINE_RES_IRQ(irq),
++		};
++
++		fixed_pdev = platform_device_register_simple("sdhci-s5l8930", -1,
++							     res, ARRAY_SIZE(res));
++		if (IS_ERR(fixed_pdev))
++			fixed_pdev = NULL;
++	}
++	return 0;
++}
++module_init(s5l8930_sdhci_init);
++
++static void __exit s5l8930_sdhci_exit(void)
++{
++	if (fixed_pdev)
++		platform_device_unregister(fixed_pdev);
++	platform_driver_unregister(&s5l8930_sdhci_driver);
++}
++module_exit(s5l8930_sdhci_exit);
++
++MODULE_DESCRIPTION("Apple S5L8930 SDHCI glue");
++MODULE_LICENSE("GPL");
