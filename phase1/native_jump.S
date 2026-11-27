@@ -18,3 +18,5 @@ _start:
 .balign 4096
 openiboot_image:
     .incbin "openiboot.bin"
+    /* Some GNU as targets do not pad the section end by themselves. */
+    .balign 4096

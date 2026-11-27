@@ -1,0 +1,228 @@
+--- a/drivers/usb/gadget/s3c-hsotg.c
++++ b/drivers/usb/gadget/s3c-hsotg.c
+@@ -321,26 +321,15 @@
+ 		hsotg->regs + S3C_GNPTXFSIZ);
+ 	*/
+ 
+-	/* set FIFO sizes to 2048/1024 */
+-
+-	writel(2048, hsotg->regs + S3C_GRXFSIZ);
+-	writel(S3C_GNPTXFSIZ_NPTxFStAddr(2048) |
+-	       S3C_GNPTXFSIZ_NPTxFDep(1024),
++	/* N81: 1664 words in total. */
++	writel(512, hsotg->regs + S3C_GRXFSIZ);
++	writel(S3C_GNPTXFSIZ_NPTxFStAddr(512) |
++	       S3C_GNPTXFSIZ_NPTxFDep(128),
+ 	       hsotg->regs + S3C_GNPTXFSIZ);
+ 
+-	/* arange all the rest of the TX FIFOs, as some versions of this
+-	 * block have overlapping default addresses. This also ensures
+-	 * that if the settings have been changed, then they are set to
+-	 * known values. */
+-
+-	/* start at the end of the GNPTXFSIZ, rounded up */
+-	addr = 2048 + 1024;
+-	size = 768;
+-
+-	/* currently we allocate TX FIFOs for all possible endpoints,
+-	 * and assume that they are all the same size. */
+-
+-	for (ep = 0; ep <= 15; ep++) {
++	addr = 512 + 128;
++	size = 128;
++	for (ep = 1; ep <= 8; ep++) {
+ 		val = addr;
+ 		val |= size << S3C_DPTXFSIZn_DPTxFSize_SHIFT;
+ 		addr += size;
+@@ -366,6 +355,7 @@
+ 			dev_err(hsotg->dev,
+ 				"%s: timeout flushing fifos (GRSTCTL=%08x)\n",
+ 				__func__, val);
++			break;
+ 		}
+ 
+ 		udelay(1);
+@@ -1733,6 +1723,7 @@
+ 			dev_err(hsotg->dev,
+ 				"%s: timeout flushing fifo (GRSTCTL=%08x)\n",
+ 				__func__, val);
++			break;
+ 		}
+ 
+ 		udelay(1);
+@@ -2149,12 +2140,12 @@
+ 
+ 		dev_dbg(hsotg->dev, "%s: daint=%08x\n", __func__, daint);
+ 
+-		for (ep = 0; ep < 15 && daint_out; ep++, daint_out >>= 1) {
++		for (ep = 0; ep < S3C_HSOTG_EPS && daint_out; ep++, daint_out >>= 1) {
+ 			if (daint_out & 1)
+ 				s3c_hsotg_epint(hsotg, ep, 0);
+ 		}
+ 
+-		for (ep = 0; ep < 15 && daint_in; ep++, daint_in >>= 1) {
++		for (ep = 0; ep < S3C_HSOTG_EPS && daint_in; ep++, daint_in >>= 1) {
+ 			if (daint_in & 1)
+ 				s3c_hsotg_epint(hsotg, ep, 1);
+ 		}
+@@ -2734,6 +2725,8 @@
+ 
+ 	/* remove the soft-disconnect and let's go */
+ 	__bic32(hsotg->regs + S3C_DCTL, S3C_DCTL_SftDiscon);
++	udelay(250);
++	__orr32(hsotg->regs + S3C_GOTGCTL, S3C_GOTGCTL_SESREQ);
+ 
+ 	/* report to the user, and return */
+ 
+@@ -2849,51 +2842,56 @@
+ 	}
+ }
+ 
+-/**
+- * s3c_hsotg_otgreset - reset the OtG phy block
+- * @hsotg: The host state.
+- *
+- * Power up the phy, set the basic configuration and start the PHY.
+- */
+-static void s3c_hsotg_otgreset(struct s3c_hsotg *hsotg)
+-{
+-	struct clk *xusbxti;
+-	u32 pwr, osc;
+-
+-	pwr = readl(S3C_PHYPWR);
+-	pwr &= ~0x19;
+-	writel(pwr, S3C_PHYPWR);
+-	mdelay(1);
+-
+-	osc = hsotg->plat->is_osc ? S3C_PHYCLK_EXT_OSC : 0;
+-
+-	xusbxti = clk_get(hsotg->dev, "xusbxti");
+-	if (xusbxti && !IS_ERR(xusbxti)) {
+-		switch (clk_get_rate(xusbxti)) {
+-		case 12*MHZ:
+-			osc |= S3C_PHYCLK_CLKSEL_12M;
+-			break;
+-		case 24*MHZ:
+-			osc |= S3C_PHYCLK_CLKSEL_24M;
+-			break;
+-		default:
+-		case 48*MHZ:
+-			/* default reference clock */
+-			break;
+-		}
+-		clk_put(xusbxti);
++/* Apple A4 PHY bring-up, following openiBoot c5cee8c (plat-a4/usbphy.c).
++ * The Samsung reference-clock encoding does not apply here. */
++static int s3c_hsotg_a4_phy(struct s3c_hsotg *hsotg)
++{
++	void __iomem *phy = S3C_VA_USB_HSPHY;
++	struct clk *ref;
++	unsigned long rate = 0;
++	u32 sel, id, depth;
++
++	ref = clk_get(hsotg->dev, "xusbxti");
++	if (!IS_ERR(ref)) {
++		rate = clk_get_rate(ref);
++		clk_put(ref);
++	}
++	if (rate == 12000000)
++		sel = 0;
++	else if (rate == 24000000)
++		sel = 1;
++	else if (rate == 48000000)
++		sel = 2;
++	else {
++		dev_err(hsotg->dev, "N81: unknown PHY reference %lu\n", rate);
++		return -ENODEV;
+ 	}
+ 
+-	writel(osc | 0x10, S3C_PHYCLK);
++	msleep(10);
++	__bic32(hsotg->regs + 0xe00, 3);		/* PCGCCTL: ungate */
++	udelay(100);
++	__orr32(hsotg->regs + S3C_DCTL, S3C_DCTL_SftDiscon);
++	mdelay(4);
+ 
+-	/* issue a full set of resets to the otg and core */
++	writel(0x200, phy + 0x60);
++	writel(0x6, phy + 0x00);
++	writel(0x6, phy + 0x1c);
++	writel(0x733, phy + 0x44);
++	udelay(10);
++	writel((readl(phy + 0x04) & ~3) | sel, phy + 0x04);
++	__orr32(phy + 0x08, 1);
++	udelay(20);
++	__bic32(phy + 0x08, 1);
++	mdelay(1);
+ 
+-	writel(S3C_RSTCON_PHY, S3C_RSTCON);
+-	udelay(20);	/* at-least 10uS */
+-	writel(0, S3C_RSTCON);
++	id = readl(hsotg->regs + 0x40);
++	depth = readl(hsotg->regs + 0x4c) >> 16;
++	dev_info(hsotg->dev, "N81: core id %08x, fifo depth %u\n", id, depth);
++	if (!id || id == 0xffffffff || id == 0x0bad0add || depth < 1664)
++		return -ENODEV;
++	return 0;
+ }
+ 
+-
+ static void s3c_hsotg_init(struct s3c_hsotg *hsotg)
+ {
+ 	u32 cfg4;
+@@ -3358,12 +3356,6 @@
+ 
+ 	hsotg->irq = ret;
+ 
+-	ret = request_irq(ret, s3c_hsotg_irq, 0, dev_name(dev), hsotg);
+-	if (ret < 0) {
+-		dev_err(dev, "cannot claim IRQ\n");
+-		goto err_regs;
+-	}
+-
+ 	dev_info(dev, "regs %p, irq %d\n", hsotg->regs, hsotg->irq);
+ 
+ 	device_initialize(&hsotg->gadget.dev);
+@@ -3397,8 +3389,12 @@
+ 
+ 	s3c_hsotg_gate(pdev, true);
+ 
+-	s3c_hsotg_otgreset(hsotg);
+-	s3c_hsotg_corereset(hsotg);
++	ret = s3c_hsotg_a4_phy(hsotg);
++	if (!ret)
++		ret = s3c_hsotg_corereset(hsotg);
++	if (ret)
++		goto err_regs;
++	mdelay(1);
+ 	s3c_hsotg_init(hsotg);
+ 
+ 	/* initialise the endpoints now the core has been initialised */
+@@ -3409,6 +3405,16 @@
+ 
+ 	s3c_hsotg_dump(hsotg);
+ 
++	writel(0, hsotg->regs + S3C_GAHBCFG);
++	writel(0, hsotg->regs + S3C_GINTMSK);
++	writel(0xffffffff, hsotg->regs + S3C_GOTGINT);
++	writel(0xffffffff, hsotg->regs + S3C_GINTSTS);
++	ret = request_irq(hsotg->irq, s3c_hsotg_irq, 0, dev_name(dev), hsotg);
++	if (ret < 0) {
++		dev_err(dev, "cannot claim IRQ\n");
++		goto err_regs;
++	}
++
+ 	our_hsotg = hsotg;
+ 	return 0;
+ 
+--- a/arch/arm/mach-s5l8930/cpu.c
++++ b/arch/arm/mach-s5l8930/cpu.c
+@@ -192,7 +192,7 @@
+ 	//&s5l8930_spi1,
+ 	//&s3c_device_i2c0,
+ 	//&s3c_device_i2c1,
+-	//&s3c_device_usb_hsotg,
++	&s3c_device_usb_hsotg,
+ 	//&s3c_device_hsmmc0,
+ };
+ 

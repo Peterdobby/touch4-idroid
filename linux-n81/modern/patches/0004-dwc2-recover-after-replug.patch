@@ -1,0 +1,16 @@
+--- a/drivers/usb/dwc2/gadget.c
++++ b/drivers/usb/dwc2/gadget.c
+@@ -3753,6 +3753,13 @@
+ 
+ 		dwc2_writel(hsotg, GINTSTS_USBRST, GINTSTS);
+ 
++		/*
++		 * A bus reset means the link is active again. Without this, a
++		 * replug after the suspend interrupt leaves lx_state at L2 and
++		 * queueing the EP0 setup request fails with -EAGAIN.
++		 */
++		hsotg->lx_state = DWC2_L0;
++
+ 		/* Report disconnection if it is not already done. */
+ 		dwc2_hsotg_disconnect(hsotg);
+ 

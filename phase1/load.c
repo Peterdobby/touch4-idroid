@@ -46,7 +46,8 @@ static void connect_target(void) {
     }
 }
 int main(int argc, char **argv) {
-    if(argc != 4) { fprintf(stderr,"Usage: %s ECID patched-iBSS.dfu native-image.bin\n",argv[0]); return 2; }
+    int kdfu = argc == 5 && !strcmp(argv[4],"--kdfu");
+    if(argc != 4 && !kdfu) { fprintf(stderr,"Usage: %s ECID patched-iBSS.dfu native-image.bin [--kdfu]\n",argv[0]); return 2; }
     if(!native_image_valid(argv[3])) {
         fputs("Native wrapped image required; raw payload refused before USB access.\n", stderr);
         return 2;
@@ -58,14 +59,19 @@ int main(int argc, char **argv) {
     int mode;
     require(irecv_get_mode(client, &mode), "mode");
     const struct irecv_device_info *d = irecv_get_device_info(client);
-    if(mode != IRECV_K_DFU_MODE || !d->srtg || strcmp(d->srtg,"iBoot-574.4") ||
-       !d->serial_string || !strstr(d->serial_string,"PWND:[")) {
-        fputs("Expected pwned BootROM DFU; nothing sent.\n", stderr); return 3;
+    /* kDFU is a patched iBSS in DFU mode: unlike BootROM DFU it reports no SRTG.
+     * Its GID key is unavailable, so the caller must pass a decrypted IMG3. */
+    if(kdfu ? (mode != IRECV_K_DFU_MODE || d->srtg != NULL)
+            : (mode != IRECV_K_DFU_MODE || !d->srtg || strcmp(d->srtg,"iBoot-574.4") ||
+               !d->serial_string || !strstr(d->serial_string,"PWND:["))) {
+        fputs(kdfu ? "Expected kDFU (DFU without SRTG); nothing sent.\n"
+                   : "Expected pwned BootROM DFU; nothing sent.\n", stderr);
+        return 3;
     }
-    puts("Pwned N81AP verified. Uploading patched iBSS to RAM."); fflush(stdout);
+    puts("N81AP verified. Uploading patched iBSS to RAM."); fflush(stdout);
     require(irecv_send_file(client, argv[2], IRECV_SEND_OPT_DFU_NOTIFY_FINISH), "iBSS upload");
     irecv_close(client); client = NULL;
-    sleep(2);
+    sleep(4);
     connect_target();
     require(irecv_get_mode(client, &mode), "iBSS mode");
     if(mode < IRECV_K_RECOVERY_MODE_1 || mode > IRECV_K_RECOVERY_MODE_4) {

@@ -1,0 +1,98 @@
+--- a/drivers/pinctrl/Kconfig
++++ b/drivers/pinctrl/Kconfig
+@@ -65,7 +65,7 @@
+ 
+ config PINCTRL_APPLE_GPIO
+ 	tristate "Apple SoC GPIO pin controller driver"
+-	depends on ARCH_APPLE
++	depends on ARCH_APPLE || ARCH_S5L8930
+ 	select PINMUX
+ 	select GPIOLIB
+ 	select GPIOLIB_IRQCHIP
+@@ -74,7 +74,7 @@
+ 	select OF_GPIO
+ 	help
+ 	  This is the driver for the GPIO controller found on Apple ARM SoCs,
+-	  including M1.
++	  including M1 and the S5L8930 (iPhone 4 / N90AP).
+ 
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called pinctrl-apple-gpio.
+--- a/drivers/pinctrl/pinctrl-apple-gpio.c
++++ b/drivers/pinctrl/pinctrl-apple-gpio.c
+@@ -39,6 +39,7 @@
+ 
+ 	struct pinctrl_desc pinctrl_desc;
+ 	struct gpio_chip gpio_chip;
++	bool a4;
+ 	u8 irqgrps[];
+ };
+ 
+@@ -53,6 +54,8 @@
+ #define REG_GPIOx_IN_IRQ_ANY 6
+ #define REG_GPIOx_IN_IRQ_OFF 7
+ #define REG_GPIOx_PERIPH     GENMASK(6, 5)
++/* openiBoot plat-a4 GPIO values 0x210/0x212/0x213 all set bit 4. */
++#define REG_GPIOx_A4_GPIO    BIT(4)
+ #define REG_GPIOx_PULL       GENMASK(8, 7)
+ #define REG_GPIOx_PULL_OFF   0
+ #define REG_GPIOx_PULL_DOWN  1
+@@ -229,12 +232,20 @@
+ static int apple_gpio_direction_input(struct gpio_chip *chip, unsigned int offset)
+ {
+ 	struct apple_gpio_pinctrl *pctl = gpiochip_get_data(chip);
++	u32 mode = pctl->a4 ? 0 : REG_GPIOx_IN_IRQ_OFF;
++
++	/*
++	 * openiBoot plat-a4 gpio.c uses mode 0 (0x210) for "use as input".
++	 * The S5L8930 pin registers share the field layout of this driver,
++	 * but the A4 input encoding is not REG_GPIOx_IN_IRQ_OFF.
++	 */
++	u32 a4 = pctl->a4 ? REG_GPIOx_A4_GPIO : 0;
+ 
+ 	apple_gpio_set_reg(pctl, offset,
+ 			   REG_GPIOx_PERIPH | REG_GPIOx_MODE | REG_GPIOx_DATA |
+-				   REG_GPIOx_INPUT_ENABLE,
+-			   FIELD_PREP(REG_GPIOx_MODE, REG_GPIOx_IN_IRQ_OFF) |
+-				   REG_GPIOx_INPUT_ENABLE);
++				   REG_GPIOx_INPUT_ENABLE | a4,
++			   FIELD_PREP(REG_GPIOx_MODE, mode) |
++				   REG_GPIOx_INPUT_ENABLE | a4);
+ 	return 0;
+ }
+ 
+@@ -242,11 +253,21 @@
+ 				       unsigned int offset, int value)
+ {
+ 	struct apple_gpio_pinctrl *pctl = gpiochip_get_data(chip);
++	u32 mask = REG_GPIOx_PERIPH | REG_GPIOx_MODE | REG_GPIOx_DATA;
++	u32 val = FIELD_PREP(REG_GPIOx_MODE, REG_GPIOx_OUT) |
++		  (value ? REG_GPIOx_DATA : 0);
+ 
+-	apple_gpio_set_reg(pctl, offset,
+-			   REG_GPIOx_PERIPH | REG_GPIOx_MODE | REG_GPIOx_DATA,
+-			   FIELD_PREP(REG_GPIOx_MODE, REG_GPIOx_OUT) |
+-				   (value ? REG_GPIOx_DATA : 0));
++	/*
++	 * openiBoot plat-a4 gpio.c writes 0x212/0x213 for output, which keep
++	 * the input-enable bit set.  i2c-gpio drives the PMU I2C0 lines
++	 * through these pins, so preserve the A4 encoding on S5L8930.
++	 */
++	if (pctl->a4) {
++		mask |= REG_GPIOx_INPUT_ENABLE | REG_GPIOx_A4_GPIO;
++		val |= REG_GPIOx_INPUT_ENABLE | REG_GPIOx_A4_GPIO;
++	}
++
++	apple_gpio_set_reg(pctl, offset, mask, val);
+ 	return 0;
+ }
+ 
+@@ -448,6 +469,8 @@
+ 	if (!pctl)
+ 		return -ENOMEM;
+ 	pctl->dev = &pdev->dev;
++	pctl->a4 = of_device_is_compatible(pdev->dev.of_node,
++					   "apple,s5l8930-gpio");
+ 	pctl->gpio_chip.irq.num_parents = nirqs;
+ 	dev_set_drvdata(&pdev->dev, pctl);
+ 

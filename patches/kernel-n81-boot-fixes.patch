@@ -1,0 +1,86 @@
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -113,6 +113,7 @@
+ endif
+ 
+ # Need -Uarm for gcc < 3.x
++KBUILD_CFLAGS	+=$(call cc-option,-mno-unaligned-access,)
+ KBUILD_CFLAGS	+=$(CFLAGS_ABI) $(CFLAGS_THUMB2) $(arch-y) $(tune-y) $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,)) -msoft-float -Uarm
+ KBUILD_AFLAGS	+=$(CFLAGS_ABI) $(AFLAGS_THUMB2) $(arch-y) $(tune-y) -include asm/unified.h -msoft-float
+ 
+--- a/arch/arm/kernel/traps.c
++++ b/arch/arm/kernel/traps.c
+@@ -277,6 +277,10 @@
+ 
+ 	bust_spinlocks(0);
+ 	add_taint(TAINT_DIE);
++	/* Bring-up: keep the first fault on screen; IRQs stay disabled. */
++	printk(KERN_EMERG "N81: halted on first fatal error\n");
++	for(;;)
++		cpu_relax();
+ 	spin_unlock_irq(&die_lock);
+ 	oops_exit();
+ 
+--- a/arch/arm/mm/mmu.c
++++ b/arch/arm/mm/mmu.c
+@@ -504,6 +504,11 @@
+ 		if (t->prot_sect)
+ 			t->prot_sect |= PMD_DOMAIN(t->domain);
+ 	}
++
++	/* The bootloader leaves SCTLR.A set; clear it before per-CPU setup. */
++	cr_alignment &= ~CR_A;
++	cr_no_alignment &= ~CR_A;
++	set_cr(cr_alignment);
+ }
+ 
+ #ifdef CONFIG_ARM_DMA_MEM_BUFFERABLE
+--- a/arch/arm/mach-s5l8930/Makefile
++++ b/arch/arm/mach-s5l8930/Makefile
+@@ -4,7 +4,7 @@
+ #	(http://www.idroidproject.org/).
+ 
+ obj-$(CONFIG_CPU_S5L8930)			+= cpu.o time.o clock.o dev-spi.o gpiolib.o setup-mipi.o
+-obj-$(CONFIG_CPU_S5L8930)			+= dev-mipi-dsim.o dev-clcd.o dev-gpio-keys.o dev-h2fmi.o
++obj-$(CONFIG_CPU_S5L8930)			+= dev-mipi-dsim.o dev-clcd.o dev-gpio-keys.o
+ 
+ obj-$(CONFIG_MACH_IPHONE_4)			+= mach-iphone4.o
+ obj-$(CONFIG_MACH_IPOD_TOUCH_4G)		+= mach-ipodtouch4g.o
+--- a/arch/arm/mach-s5l8930/clock.c
++++ b/arch/arm/mach-s5l8930/clock.c
+@@ -158,6 +158,11 @@
+ 
+ 	debug_printk("%s: 0x%p 0x%x %d\n", __func__, reg, _idx, _enable);
+ 
++	/* Keep the display inherited from the bootloader: HPERF2, CLCD,
++	 * MIPI DSI and display pipe have no kernel driver holding them on. */
++	if(!_enable && (_idx == 0x0b || _idx == 0x0f || _idx == 0x11 || _idx == 0x12))
++		return;
++
+ 	if(_enable)
+ 		writel(readl(reg) | 0xF, reg);
+ 	else
+--- a/arch/arm/lib/memset.S
++++ b/arch/arm/lib/memset.S
+@@ -28,7 +28,7 @@
+  * memset again.
+  */
+ 
+-ENTRY(memset)
++ENTRY(__t4_memset_body)
+ 	ands	r3, r0, #3		@ 1 unaligned?
+ 	bne	1b			@ 1
+ /*
+@@ -124,4 +124,12 @@
+ 	tst	r2, #1
+ 	strneb	r1, [r0], #1
+ 	mov	pc, lr
++ENDPROC(__t4_memset_body)
++
++/* The body above returns an advanced r0; GCC >= 4.8 relies on the C ABI. */
++ENTRY(memset)
++	stmfd	sp!, {r0, lr}
++	and	r1, r1, #255
++	bl	__t4_memset_body
++	ldmfd	sp!, {r0, pc}
+ ENDPROC(memset)

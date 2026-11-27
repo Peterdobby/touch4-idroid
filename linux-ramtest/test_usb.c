@@ -15,6 +15,7 @@ void libusb_exit(libusb_context *ctx) {(void)ctx;}
 libusb_device_handle *libusb_open_device_with_vid_pid(libusb_context *ctx,uint16_t vid,uint16_t pid)
 {(void)ctx;assert(vid==0x525 && pid==0x1280);return (libusb_device_handle *)1;}
 int libusb_claim_interface(libusb_device_handle *dev,int n) {(void)dev;assert(n==0);return 0;}
+int libusb_set_auto_detach_kernel_driver(libusb_device_handle *dev,int enable) {(void)dev;(void)enable;return 0;}
 int libusb_release_interface(libusb_device_handle *dev,int n) {(void)dev;(void)n;return 0;}
 void libusb_close(libusb_device_handle *dev) {(void)dev;}
 const char *libusb_error_name(int code) {(void)code;return "OFFLINE_SIMULATION";}

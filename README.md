@@ -50,6 +50,16 @@ The installer writes boot firmware and adds boot files. Android itself runs in R
 
 Wi-Fi, audio, camera, Bluetooth, complete power management, deep sleep, and long-term stability are not listed as verified features. See [Status](docs/STATUS.md) and [RAM and storage](docs/RAM-AND-STORAGE.md).
 
+## Linux 6.17 with Wi-Fi, audio and Bluetooth (RAM-only)
+
+[`linux-n81/`](linux-n81/README.md) boots a mainline-based **Linux 6.17** from a
+**Linux** host through kDFU and OpeniBoot, RAM-only, with touch, Wi-Fi
+(BCM4329), speaker audio (CS42L59, ALSA with DMA), Bluetooth (pairing, A2DP to
+and from the iPod) and a USB serial shell. [`phone-ui/`](phone-ui/README.md) is
+an LVGL phone interface (ESP-Brookesia) with music, calculator and Bluetooth
+settings that opens at boot. Confirmed on one iPod4,1 on iOS 6.1.6. It does
+not use the boot menu or installer above, and it has no persistent storage.
+
 ## Boot flow
 
 ```mermaid
