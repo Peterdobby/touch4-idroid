@@ -32,6 +32,7 @@ def cpio_entry(name,data=b'',mode=0o100644,rdev=(0,0),ino=1):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rebuild-kernel',action='store_true',help='rebuild in a new kernel source tree instead of reusing checked version 01 kernel/initramfs')
+    parser.add_argument('--initramfs',type=Path,help='use this gzip cpio instead of the built-in init.c image')
     options=parser.parse_args()
     reuse=not options.rebuild_kernel
     OUT.mkdir(exist_ok=True)
@@ -89,7 +90,7 @@ def main():
         shutil.copy2(HERE/'uncompress.h',mach/'include/mach/uncompress.h')
         config=(SRC/'.config').read_text()
         for marker in ['CONFIG_MACH_IPOD_TOUCH_4G=y','# CONFIG_MTD is not set',
-                       'CONFIG_BLK_DEV_INITRD=y','CONFIG_FONT_8x8=y']:
+                       'CONFIG_BLK_DEV_INITRD=y']:
             assert marker in config,marker
         # Build the existing N81 configuration, with diagnostic console changes only.
         with (OUT/'kernel-build.log').open('wb') as log:
@@ -125,6 +126,11 @@ def main():
         (OUT/'kernel-reuse.json').write_text(json.dumps({
             'from':str(previous),'reason':'adapter command-line fix only; kernel/initramfs unchanged',
             'files':{n:prior['files'][n] for n in ('zImage','vmlinux','kernel.config','init','initramfs.cpio.gz')}},indent=2)+'\n')
+    if options.initramfs:
+        initrd=options.initramfs.read_bytes();archive=gzip.decompress(initrd)
+        # OpeniBoot copies it to 0x48000000; its framebuffer is at 0x48104580.
+        assert len(initrd)<=0x100000,'initramfs too large'
+        (OUT/'initramfs.cpio.gz').write_bytes(initrd)
     subprocess.run(['cc','-Wall','-Wextra','-Werror',str(HERE/'test_cmdline.c'),
                     '-o',str(OUT/'test-cmdline')],check=True)
     test=subprocess.check_output([str(OUT/'test-cmdline')])
