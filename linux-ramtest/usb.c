@@ -14,10 +14,11 @@
 static libusb_device_handle *h;
 static int version_seen,received,refused,cmdline_seen;
 static unsigned framebuffer_seen;
+static int send_failed;
 static void send_bytes(const unsigned char *p,int size)
 {
     int n=0,e=libusb_bulk_transfer(h,2,(unsigned char *)p,size,&n,5000);
-    if(e || n!=size) {fprintf(stderr,"ACM OUT failed: %s (%d/%d)\n",libusb_error_name(e),n,size);exit(2);}
+    if(e || n!=size) {fprintf(stderr,"ACM OUT failed: %s (%d/%d)\n",libusb_error_name(e),n,size);send_failed=1;}
 }
 static void command(const char *s) {send_bytes((const unsigned char *)s,(int)strlen(s));}
 static int receive_until(const char *marker,unsigned seconds)
@@ -49,17 +50,34 @@ static int receive_until(const char *marker,unsigned seconds)
 }
 /* The public ACM stalls on long single transfers, so send 1 MiB pieces, each
  * confirmed by the device, and pause briefly every 16 KiB. */
+/* A USB reset re-arms the stalled ACM receive without rebooting the device. */
+static libusb_context *usb_ctx;
+static int recover(void)
+{
+    fputs("[HOST] Transfer stalled; resetting the USB connection.\n",stderr);
+    libusb_reset_device(h);libusb_close(h);h=NULL;
+    sleep(3); /* the device re-enumerates about a second later */
+    for(int i=0;i<20 && !h;i++) {sleep(1);h=libusb_open_device_with_vid_pid(usb_ctx,0x0525,0x1280);}
+    if(!h) return 0;
+    libusb_set_auto_detach_kernel_driver(h,1);
+    if(libusb_claim_interface(h,0)) return 0;
+    send_failed=0;command("version\n");
+    return !send_failed && receive_until("ACM: Done: version.",10);
+}
 static int upload(const char *path,unsigned address,long limit)
 {
     FILE *f=fopen(path,"rb");if(!f)return 0;
     if(fseek(f,0,SEEK_END)) {fclose(f);return 0;}
     long size=ftell(f);rewind(f);
     if(size<=0 || size>limit) {fclose(f);return 0;}
+    int tries=0;
     for(long done=0;done<size;) {
+        if(fseek(f,done,SEEK_SET)) {fclose(f);return 0;}
+        send_failed=0;
         long piece=size-done>(1L<<20) ? (1L<<20) : size-done;
         char line[128];received=0;
         snprintf(line,sizeof(line),"sendfile 0x%lx %ld\n",address+done,piece);command(line);
-        for(long pos=0;pos<piece;) {
+        for(long pos=0;pos<piece && !send_failed;) {
             unsigned char b[512];int count=piece-pos>512 ? 512 : (int)(piece-pos);
             if(fread(b,1,(size_t)count,f)!=(size_t)count) {fclose(f);return 0;}
             send_bytes(b,count);pos+=count;
@@ -67,8 +85,11 @@ static int upload(const char *path,unsigned address,long limit)
         }
         /* Existing ACM queues progress until a following command kicks IN. */
         command("version\n");
-        if(!receive_until("ACM: Done: version.",10) || !received) {fclose(f);return 0;}
-        done+=piece;
+        if(send_failed || !receive_until("ACM: Done: version.",10) || !received) {
+            if(++tries>3 || !recover()) {fclose(f);return 0;}
+            continue; /* resend the same piece */
+        }
+        done+=piece;tries=0;
     }
     fclose(f);
     return 1;
@@ -81,6 +102,7 @@ int main(int argc,char **argv)
     unsigned long boot=strtoul(argv[6],&end,0);
     if(*end || !(boot&1) || boot<0x44000000 || boot>=0x44010000)return 1;
     libusb_context *ctx=NULL;if(libusb_init(&ctx))return 2;
+    usb_ctx=ctx;
     h=libusb_open_device_with_vid_pid(ctx,0x0525,0x1280);
     if(!h) {fputs("Start the proven published OpeniBoot RAM baseline first.\n",stderr);return 2;}
     libusb_set_auto_detach_kernel_driver(h,1); /* Linux may bind cdc_acm */
