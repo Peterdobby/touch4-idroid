@@ -74,7 +74,8 @@ int main(int argc,char **argv)
     libusb_context *ctx=NULL;if(libusb_init(&ctx))return 2;
     h=libusb_open_device_with_vid_pid(ctx,0x0525,0x1280);
     if(!h) {fputs("Start the proven published OpeniBoot RAM baseline first.\n",stderr);return 2;}
-    if(libusb_claim_interface(h,0))return 2;
+    libusb_set_auto_detach_kernel_driver(h,1); /* Linux may bind cdc_acm */
+    if(libusb_claim_interface(h,0)) {fputs("Cannot claim OpeniBoot USB interface.\n",stderr);return 2;}
     puts("OpeniBoot USB 0525:1280 opened.");
     command("version\n");
     if(!receive_until("ACM: Done: version.",5) || !version_seen)return 3;

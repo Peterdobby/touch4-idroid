@@ -10,7 +10,7 @@ static long call3(long n,long a,long b,long c)
 }
 void _start(void)
 {
-    static const char marker[]="<5>T4_LINUX_RAM_01: PID1_REACHED; no block device opened; no storage mounted\n";
+    static const char marker[]="<5>N81: Linux userspace is running\n";
     struct { long sec,nsec; } delay={5,0};
     long fd=call3(5,(long)"/dev/kmsg",1,0);
     for(;;) {

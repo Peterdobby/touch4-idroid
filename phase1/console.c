@@ -20,6 +20,7 @@ int main(void) {
     int result = 3, claimed = 0, config = 0;
     char data[65536]; size_t used = 0;
     int n, e;
+    libusb_set_auto_detach_kernel_driver(h,1); /* Linux may bind cdc_acm */
     e = libusb_get_configuration(h,&config);
     if(e) goto done;
     if(config != 1 && libusb_set_configuration(h,1)) goto done;
