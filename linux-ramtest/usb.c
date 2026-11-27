@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #ifndef T4_TEST_NAME
 #define T4_TEST_NAME "T4_LINUX_RAM_02"
 #endif
@@ -46,23 +47,31 @@ static int receive_until(const char *marker,unsigned seconds)
     }
     return 0;
 }
+/* The public ACM stalls on long single transfers, so send 1 MiB pieces, each
+ * confirmed by the device, and pause briefly every 16 KiB. */
 static int upload(const char *path,unsigned address,long limit)
 {
     FILE *f=fopen(path,"rb");if(!f)return 0;
     if(fseek(f,0,SEEK_END)) {fclose(f);return 0;}
     long size=ftell(f);rewind(f);
     if(size<=0 || size>limit) {fclose(f);return 0;}
-    char line[128];received=0;
-    snprintf(line,sizeof(line),"sendfile 0x%x %ld\n",address,size);command(line);
-    for(long pos=0;pos<size;) {
-        unsigned char b[512];int count=size-pos>512 ? 512 : (int)(size-pos);
-        if(fread(b,1,(size_t)count,f)!=(size_t)count) {fclose(f);return 0;}
-        send_bytes(b,count);pos+=count;
+    for(long done=0;done<size;) {
+        long piece=size-done>(1L<<20) ? (1L<<20) : size-done;
+        char line[128];received=0;
+        snprintf(line,sizeof(line),"sendfile 0x%lx %ld\n",address+done,piece);command(line);
+        for(long pos=0;pos<piece;) {
+            unsigned char b[512];int count=piece-pos>512 ? 512 : (int)(piece-pos);
+            if(fread(b,1,(size_t)count,f)!=(size_t)count) {fclose(f);return 0;}
+            send_bytes(b,count);pos+=count;
+            if(!(pos&0x3fff))usleep(1000);
+        }
+        /* Existing ACM queues progress until a following command kicks IN. */
+        command("version\n");
+        if(!receive_until("ACM: Done: version.",10) || !received) {fclose(f);return 0;}
+        done+=piece;
     }
     fclose(f);
-    /* Existing ACM queues progress until a following command kicks IN. */
-    command("version\n");
-    return receive_until("ACM: Done: version.",10) && received;
+    return 1;
 }
 int main(int argc,char **argv)
 {
@@ -85,7 +94,7 @@ int main(int argc,char **argv)
     command("jump 0x684\n");
     if(!receive_until("ACM: Done: jump 0x684.",5))return 3;
     char line[128];snprintf(line,sizeof(line),"jump 0x%lx\n",stage);command(line);
-    if(!receive_until("T4_LINUX_STAGED_NOT_EXECUTED",10) || !cmdline_seen) {
+    if(!receive_until("T4_LINUX_STAGED_NOT_EXECUTED",120) || !cmdline_seen) {
         fputs("[HOST] Stage/command-line validation failed; Linux handoff stopped.\n",stderr);
         return 4;
     }
@@ -98,7 +107,7 @@ int main(int argc,char **argv)
         puts("[HOST] Requesting native Linux handoff. Photograph/read the screen.");
         puts("[HOST] USB disconnect or this host message is NOT kernel boot evidence.");fflush(stdout);
         snprintf(line,sizeof(line),"jump 0x%lx\n",boot);command(line);
-        if(receive_until("native boot_linux returned unexpectedly",15) || refused) {
+        if(receive_until("native boot_linux returned unexpectedly",60) || refused) {
             fputs("[HOST] Linux handoff refused or returned; boot failed.\n",stderr);
             return 4;
         }
